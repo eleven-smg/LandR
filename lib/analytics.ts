@@ -38,7 +38,7 @@ export async function getRequestMeta() {
 
 export async function logPageView(creatorId: string, path: string) {
   const m = await getRequestMeta()
-  await supabaseAdmin.from("page_views").insert({
+  const { error } = await supabaseAdmin.from("page_views").insert({
     creator_id: creatorId,
     path,
     country: m.country,
@@ -50,11 +50,16 @@ export async function logPageView(creatorId: string, path: string) {
     referrer: m.referrer,
     source: m.source,
   })
+  // Tracking must never break the page, so log and continue. Watch for 42703
+  // (undefined column), which means sql/schema.sql has not been run.
+  if (error) {
+    console.error("[analytics] page_view insert failed:", error.code, error.message)
+  }
 }
 
 export async function logLinkClick(creatorId: string, linkId: string, destinationUrl: string) {
   const m = await getRequestMeta()
-  await supabaseAdmin.from("link_clicks").insert({
+  const { error } = await supabaseAdmin.from("link_clicks").insert({
     creator_id: creatorId,
     link_id: linkId,
     destination_url: destinationUrl,
@@ -67,4 +72,7 @@ export async function logLinkClick(creatorId: string, linkId: string, destinatio
     referrer: m.referrer,
     source: m.source,
   })
+  if (error) {
+    console.error("[analytics] link_click insert failed:", error.code, error.message)
+  }
 }

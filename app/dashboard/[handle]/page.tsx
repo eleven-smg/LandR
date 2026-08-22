@@ -112,8 +112,16 @@ export default async function DashboardPage({
     <main className="min-h-screen bg-neutral-950 px-5 py-10 text-neutral-100">
       <div className="mx-auto w-full max-w-4xl">
         <div className="mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight">{creator.display_name} ? Analytics</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{creator.display_name} &mdash; Analytics</h1>
           <p className="text-sm text-neutral-500">/{creator.handle}</p>
+          <div className="mt-3 flex gap-4 text-sm">
+            <a href={"/dashboard/" + creator.handle + "/edit"} className="text-indigo-400 hover:underline">
+              Edit page &rarr;
+            </a>
+            <a href={"/" + creator.handle} className="text-neutral-400 hover:underline">
+              View public page &rarr;
+            </a>
+          </div>
         </div>
 
         <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
