@@ -46,10 +46,31 @@ function faviconFor(url: string) {
   }
 }
 
-export default async function CreatorPage({ params }: { params: Promise<{ handle: string }> }) {
+export default async function CreatorPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ handle: string }>
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
+}) {
   const { handle } = await params
+  const query = searchParams ? await searchParams : {}
+  const isPreview = query.preview === "1"
 
-  const { data: creator } = await supabaseAdmin.from("creators").select("*").eq("handle", handle).single()
+  const { data: creator, error: creatorError } = await supabaseAdmin
+    .from("creators")
+    .select("*")
+    .eq("handle", handle)
+    .single()
+
+  if (creatorError && creatorError.code !== "PGRST116") {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center bg-black px-6 text-center text-white/70">
+        <h1 className="text-xl font-semibold text-white">Something went wrong</h1>
+        <p className="mt-2 max-w-sm text-sm">This page could not be loaded right now. Please refresh in a moment.</p>
+      </main>
+    )
+  }
 
   if (!creator) {
     return (
@@ -59,22 +80,24 @@ export default async function CreatorPage({ params }: { params: Promise<{ handle
     )
   }
 
-  const meta = await getRequestMeta()
-  const blocked = (creator.blocked_countries || []) as string[]
-  if (meta.country && blocked.includes(meta.country)) {
-    if (creator.blocked_redirect_url) {
-      redirect(String(creator.blocked_redirect_url))
+  if (!isPreview) {
+    const meta = await getRequestMeta()
+    const blocked = (creator.blocked_countries || []) as string[]
+    if (meta.country && blocked.includes(meta.country)) {
+      if (creator.blocked_redirect_url) {
+        redirect(String(creator.blocked_redirect_url))
+      }
+      return (
+        <main className="flex min-h-screen flex-col items-center justify-center bg-black px-6 text-center text-white/70">
+          <div className="text-4xl">&#128683;</div>
+          <h1 className="mt-4 text-xl font-semibold text-white">Not available in your region</h1>
+          <p className="mt-2 max-w-sm text-sm">This page isn&rsquo;t accessible from your location.</p>
+        </main>
+      )
     }
-    return (
-      <main className="flex min-h-screen flex-col items-center justify-center bg-black px-6 text-center text-white/70">
-        <div className="text-4xl">&#128683;</div>
-        <h1 className="mt-4 text-xl font-semibold text-white">Not available in your region</h1>
-        <p className="mt-2 max-w-sm text-sm">This page isn&rsquo;t accessible from your location.</p>
-      </main>
-    )
-  }
 
-  await logPageView(creator.id, "/" + handle)
+    await logPageView(creator.id, "/" + handle)
+  }
 
   const { data: links } = await supabaseAdmin
     .from("links")
