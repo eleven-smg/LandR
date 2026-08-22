@@ -15,6 +15,11 @@ type Info = {
   mode: "wide" | "portrait" | "tall"
 }
 
+const YT_EMBED = "https://www.youtube.com/embed/"
+const TT_PLAYER = "https://www.tiktok.com/player/v1/"
+const TG_BASE = "https://t.me/"
+const IG_BASE = "https://www.instagram.com/"
+
 const ICON: Record<string, string> = {
   youtube: "https://cdn.simpleicons.org/youtube/white",
   tiktok: "https://cdn.simpleicons.org/tiktok/white",
@@ -33,20 +38,20 @@ function parse(url: string): Info {
       const v = u.searchParams.get("v")
       const last = u.pathname.split("/").filter(Boolean).pop()
       const id = v || last || ""
-      return { platform: "youtube", kind: "iframe", src: `https://www.youtube.com/embed/${id}`, url, mode: "wide" }
+      return { platform: "youtube", kind: "iframe", src: YT_EMBED + id, url, mode: "wide" }
     }
     if (host.includes("youtu.be")) {
       const id = u.pathname.split("/").filter(Boolean)[0] || ""
-      return { platform: "youtube", kind: "iframe", src: `https://www.youtube.com/embed/${id}`, url, mode: "wide" }
+      return { platform: "youtube", kind: "iframe", src: YT_EMBED + id, url, mode: "wide" }
     }
     if (host.includes("tiktok.com")) {
       const m = u.pathname.match(/video\/(\d+)/)
       const id = m ? m[1] : ""
-      return { platform: "tiktok", kind: "iframe", src: `https://www.tiktok.com/player/v1/${id}`, url, mode: "portrait" }
+      return { platform: "tiktok", kind: "iframe", src: TT_PLAYER + id, url, mode: "portrait" }
     }
     if (host === "t.me" || host.includes("telegram.me")) {
       const path = u.pathname.split("/").filter(Boolean).join("/")
-      return { platform: "telegram", kind: "iframe", src: `https://t.me/${path}?embed=1&dark=1`, url, mode: "tall" }
+      return { platform: "telegram", kind: "iframe", src: TG_BASE + path + "?embed=1&dark=1", url, mode: "tall" }
     }
     if (host === "x.com" || host.includes("twitter.com")) {
       const m = u.pathname.match(/status\/(\d+)/)
@@ -60,10 +65,10 @@ function parse(url: string): Info {
       const parts = u.pathname.split("/").filter(Boolean)
       const seg = parts[0] || "p"
       const code = parts[1] || ""
-      return { platform: "instagram", kind: "iframe", src: `https://www.instagram.com/${seg}/${code}/embed`, url, mode: "tall" }
+      return { platform: "instagram", kind: "iframe", src: IG_BASE + seg + "/" + code + "/embed", url, mode: "tall" }
     }
   } catch {
-    // fall through to link
+    // fall through to plain link
   }
   return { platform: "link", kind: "link", url, mode: "wide" }
 }
@@ -103,7 +108,7 @@ function EmbedFrame({ info }: { info: Info }) {
           ? { aspectRatio: "9 / 16" }
           : { height: "560px" }
     return (
-      <div className={`relative ${common}`} style={style}>
+      <div className={"relative " + common} style={style}>
         <iframe
           src={info.src}
           className="absolute inset-0 h-full w-full"
@@ -116,7 +121,7 @@ function EmbedFrame({ info }: { info: Info }) {
   }
   if (info.kind === "tweet") {
     return (
-      <div className={`${common} flex justify-center p-1`} data-theme="dark">
+      <div className={common + " flex justify-center p-1"} data-theme="dark">
         <div className="w-full">
           <Tweet id={info.tweetId as string} />
         </div>
@@ -125,13 +130,18 @@ function EmbedFrame({ info }: { info: Info }) {
   }
   if (info.kind === "threads") {
     return (
-      <div className={`${common} p-3`}>
+      <div className={common + " p-3"}>
         <ThreadsEmbed url={info.url} />
       </div>
     )
   }
   return (
-    <a href={info.url} target="_blank" rel="noopener noreferrer" className={`${common} flex items-center justify-center p-6 text-sm text-white/70`}>
+    <a
+      href={info.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={common + " flex items-center justify-center p-6 text-sm text-white/70"}
+    >
       Open link
     </a>
   )
@@ -153,10 +163,16 @@ function Stack({ items }: { items: Item[] }) {
     <div className="flex w-full flex-col gap-5">
       {items.map((it) => {
         const wrap =
-          it.info.mode === "portrait" ? "mx-auto w-full max-w-[320px]" : it.info.mode === "tall" ? "mx-auto w-full max-w-[420px]" : "w-full"
+          it.info.mode === "portrait"
+            ? "mx-auto w-full max-w-[320px]"
+            : it.info.mode === "tall"
+              ? "mx-auto w-full max-w-[420px]"
+              : "w-full"
         return (
           <div key={it.id} className={wrap}>
-            <div className="mb-2 flex justify-center"><Chip info={it.info} label={it.label} /></div>
+            <div className="mb-2 flex justify-center">
+              <Chip info={it.info} label={it.label} />
+            </div>
             <EmbedFrame info={it.info} />
           </div>
         )
@@ -170,18 +186,30 @@ function Carousel({ items }: { items: Item[] }) {
   const n = items.length
   const it = items[i]
   const wrap = it.info.mode === "portrait" ? "mx-auto w-full max-w-[320px]" : "mx-auto w-full max-w-[420px]"
-  const btn = "flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 text-lg text-white/80 hover:bg-white/10"
+  const btn =
+    "flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 text-lg text-white/80 hover:bg-white/10"
   return (
     <div className="w-full">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <button type="button" onClick={() => setI((i - 1 + n) % n)} className={btn}>&#8249;</button>
+        <button type="button" onClick={() => setI((i - 1 + n) % n)} className={btn}>
+          &#8249;
+        </button>
         <Chip info={it.info} label={it.label} />
-        <button type="button" onClick={() => setI((i + 1) % n)} className={btn}>&#8250;</button>
+        <button type="button" onClick={() => setI((i + 1) % n)} className={btn}>
+          &#8250;
+        </button>
       </div>
-      <div className={wrap}><EmbedFrame info={it.info} /></div>
+      <div className={wrap}>
+        <EmbedFrame info={it.info} />
+      </div>
       <div className="mt-3 flex justify-center gap-1.5">
         {items.map((d, idx) => (
-          <button key={d.id} type="button" onClick={() => setI(idx)} className={`h-2 rounded-full transition-all ${idx === i ? "w-5 bg-white/80" : "w-2 bg-white/30"}`} />
+          <button
+            key={d.id}
+            type="button"
+            onClick={() => setI(idx)}
+            className={"h-2 rounded-full transition-all " + (idx === i ? "w-5 bg-white/80" : "w-2 bg-white/30")}
+          />
         ))}
       </div>
     </div>
@@ -222,17 +250,19 @@ function Deck({ items, orientation }: { items: Item[]; orientation: "h" | "v" })
 
   return (
     <div className="w-full">
-      <div className="mb-2 flex justify-center"><Chip info={it.info} label={it.label} /></div>
+      <div className="mb-2 flex justify-center">
+        <Chip info={it.info} label={it.label} />
+      </div>
       {orientation === "h" ? (
         <div className="flex items-stretch justify-center">
-          <div className={`relative w-full ${wrapMax}`}>
+          <div className={"relative w-full " + wrapMax}>
             <div className="pointer-events-none absolute -right-2 top-2 bottom-2 -z-10 w-full rounded-2xl border border-white/5 bg-white/5" />
             <EmbedFrame info={it.info} />
           </div>
           {n > 1 ? tabs : null}
         </div>
       ) : (
-        <div className={`mx-auto ${wrapMax}`}>
+        <div className={"mx-auto " + wrapMax}>
           <div className="relative">
             <div className="pointer-events-none absolute -bottom-2 left-2 right-2 -z-10 h-full rounded-2xl border border-white/5 bg-white/5" />
             <EmbedFrame info={it.info} />
@@ -241,9 +271,15 @@ function Deck({ items, orientation }: { items: Item[]; orientation: "h" | "v" })
         </div>
       )}
       <div className="mt-3 flex items-center justify-center gap-3">
-        <button type="button" onClick={() => setActive((active - 1 + n) % n)} className={btn}>&#8249;</button>
-        <span className="text-xs text-white/40">{active + 1} / {n}</span>
-        <button type="button" onClick={() => setActive((active + 1) % n)} className={btn}>&#8250;</button>
+        <button type="button" onClick={() => setActive((active - 1 + n) % n)} className={btn}>
+          &#8249;
+        </button>
+        <span className="text-xs text-white/40">
+          {active + 1} / {n}
+        </span>
+        <button type="button" onClick={() => setActive((active + 1) % n)} className={btn}>
+          &#8250;
+        </button>
       </div>
     </div>
   )
