@@ -2,13 +2,16 @@
 --  LandR - consolidated database schema (Supabase / Postgres)
 --
 --  Run this whole file in Supabase > SQL Editor. It is idempotent:
---  safe to run as many times as you like. It replaces every
---  scattered "paste this migration" snippet from the build plan.
+--  safe to run as many times as you like.
 --
 --  IMPORTANT: "create table if not exists" does NOT add missing
 --  columns to a table that already exists. That is why every
 --  column below is also repeated as "alter table ... add column
 --  if not exists". Run the whole file, not just the top half.
+--
+--  Index names below deliberately match the ones already in the
+--  live database. Creating the same index under a new name would
+--  leave two identical indexes slowing down every write.
 -- ============================================================
 
 create extension if not exists pgcrypto;
@@ -57,8 +60,11 @@ alter table creators add column if not exists subscribe_note text;
 alter table creators add column if not exists blocked_countries jsonb default '[]';
 alter table creators add column if not exists blocked_redirect_url text;
 
--- Per-creator dashboard login
--- NOTE: store a hash here, never a plaintext password. See README.
+-- Per-creator dashboard login.
+-- Deliberately plaintext for now: single client, at most ~5 users, still in
+-- testing. Switch to a bcrypt hash (or Supabase Auth) before this becomes a
+-- multi-tenant product. Until then, treat this column as a secret: it is
+-- readable by anyone holding the service role key.
 alter table creators add column if not exists dashboard_password text;
 
 -- ------------------------------------------------------------
@@ -95,19 +101,46 @@ alter table links add column if not exists type text default 'button';
 alter table links add column if not exists geo_rules jsonb default '[]';
 alter table links add column if not exists rotate boolean default false;
 alter table links add column if not exists rotation_urls jsonb default '[]';
+alter table links add column if not exists rotation_index int default 0;
 
 -- Scheduling
 alter table links add column if not exists starts_at timestamptz;
 alter table links add column if not exists ends_at timestamptz;
 
 -- ------------------------------------------------------------
+-- ROTATION: even spread instead of random
+--
+-- Math.random() clusters: with 3 URLs and 30 clicks you can easily
+-- get 14/9/7. This does the increment and the read in ONE atomic
+-- statement, so concurrent clicks cannot land on the same index
+-- and the spread is exactly even.
+-- ------------------------------------------------------------
+create or replace function next_rotation_index(link_id uuid, pool_size int)
+returns int
+language plpgsql
+as $$
+declare
+  idx int;
+begin
+  if pool_size is null or pool_size < 1 then
+    return 0;
+  end if;
+
+  update links
+     set rotation_index = (coalesce(rotation_index, 0) + 1) % pool_size
+   where id = link_id
+  returning rotation_index into idx;
+
+  return coalesce(idx, 0);
+end;
+$$;
+
+-- ------------------------------------------------------------
 -- ANALYTICS
 --
 -- lib/analytics.ts writes region, city, device, browser, os and
 -- source on every page view, and the same set plus destination_url
--- on every click. Without these columns those inserts fail and the
--- app silently records nothing, because the insert result is never
--- checked for an error.
+-- on every click. Without these columns those inserts fail.
 -- ------------------------------------------------------------
 create table if not exists page_views (
   id bigint generated always as identity primary key,
@@ -170,15 +203,15 @@ alter table subscribers add column if not exists email text;
 alter table subscribers add column if not exists created_at timestamptz default now();
 alter table subscribers add column if not exists unsubscribed_at timestamptz;
 
--- Collapse any duplicates that were saved before the constraint existed,
--- keeping the earliest signup. Required or the unique index below fails.
+-- Collapse any duplicates saved before the constraint existed, keeping the
+-- earliest signup. Required or the unique index below fails.
 delete from subscribers s
 using subscribers t
 where s.creator_id = t.creator_id
   and lower(s.email) = lower(t.email)
   and s.id > t.id;
 
-create unique index if not exists subscribers_creator_email_uniq
+create unique index if not exists subscribers_creator_id_email_key
   on subscribers (creator_id, lower(email));
 
 -- ------------------------------------------------------------
@@ -191,20 +224,21 @@ create table if not exists signup_log (
   created_at timestamptz default now()
 );
 
-create index if not exists signup_log_ip_created_idx on signup_log (ip, created_at desc);
+create index if not exists signup_log_ip_created_at_idx on signup_log (ip, created_at desc);
 
 -- ------------------------------------------------------------
 -- INDEXES
 --
--- The dashboard filters by creator_id and orders by created_at on
--- every load. Without these, each dashboard view is a sequential
--- scan and gets slower as traffic grows.
+-- These four names match what is already live, so re-running this
+-- file is a no-op rather than creating duplicates.
 -- ------------------------------------------------------------
-create index if not exists page_views_creator_created_idx on page_views (creator_id, created_at desc);
-create index if not exists link_clicks_creator_created_idx on link_clicks (creator_id, created_at desc);
-create index if not exists link_clicks_link_idx on link_clicks (link_id);
-create index if not exists links_creator_position_idx on links (creator_id, position);
-create index if not exists subscribers_creator_created_idx on subscribers (creator_id, created_at desc);
+create index if not exists page_views_creator_id_created_at_idx on page_views (creator_id, created_at desc);
+create index if not exists link_clicks_creator_id_created_at_idx on link_clicks (creator_id, created_at desc);
+create index if not exists link_clicks_link_id_idx on link_clicks (link_id);
+create index if not exists links_creator_id_position_idx on links (creator_id, position);
+
+-- New: the editor lists subscribers newest-first per creator.
+create index if not exists subscribers_creator_id_created_at_idx on subscribers (creator_id, created_at desc);
 
 -- ------------------------------------------------------------
 -- ROW LEVEL SECURITY
@@ -222,6 +256,9 @@ alter table signup_log enable row level security;
 
 -- ------------------------------------------------------------
 -- SEED the demo creator
+--
+-- /ava currently returns "This page does not exist", which means
+-- there is no row for that handle. This puts it back.
 -- ------------------------------------------------------------
 insert into creators (handle, display_name)
 select 'ava', 'Ava'
@@ -235,7 +272,7 @@ where not exists (select 1 from creators where handle = 'ava');
 -- ============================================================
 
 -- ------------------------------------------------------------
--- Verify what actually exists (optional; run on its own)
+-- Verify what actually exists (run on its own)
 -- ------------------------------------------------------------
 -- select table_name,
 --        string_agg(column_name, ', ' order by ordinal_position) as columns
