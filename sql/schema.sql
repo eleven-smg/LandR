@@ -9,6 +9,12 @@
 --  columns to a table that already exists. That is why every
 --  column below is also repeated as "alter table ... add column
 --  if not exists". Run the whole file, not just the top half.
+--
+--  INDEX NAMES: "create index if not exists" matches on NAME, not
+--  on definition. Every index name below is the name that actually
+--  exists in the live database, verified by introspection. Do not
+--  rename them: a new name on the same columns silently builds a
+--  second redundant index and doubles write cost.
 -- ============================================================
 
 create extension if not exists pgcrypto;
@@ -57,8 +63,12 @@ alter table creators add column if not exists subscribe_note text;
 alter table creators add column if not exists blocked_countries jsonb default '[]';
 alter table creators add column if not exists blocked_redirect_url text;
 
--- Per-creator dashboard login
--- NOTE: store a hash here, never a plaintext password. See README.
+-- Per-creator dashboard login.
+-- DECISION: stored as plain text on purpose. This is a single-client
+-- build in testing with at most a handful of users, and the owner
+-- needs to read and reset passwords directly. Switch to a hash
+-- (pgcrypto crypt/bf is already available above) before this becomes
+-- a multi-tenant SaaS with self-serve signup.
 alter table creators add column if not exists dashboard_password text;
 
 -- ------------------------------------------------------------
@@ -95,6 +105,7 @@ alter table links add column if not exists type text default 'button';
 alter table links add column if not exists geo_rules jsonb default '[]';
 alter table links add column if not exists rotate boolean default false;
 alter table links add column if not exists rotation_urls jsonb default '[]';
+alter table links add column if not exists rotation_index int default 0;
 
 -- Scheduling
 alter table links add column if not exists starts_at timestamptz;
@@ -105,9 +116,7 @@ alter table links add column if not exists ends_at timestamptz;
 --
 -- lib/analytics.ts writes region, city, device, browser, os and
 -- source on every page view, and the same set plus destination_url
--- on every click. Without these columns those inserts fail and the
--- app silently records nothing, because the insert result is never
--- checked for an error.
+-- on every click. These columns already exist in the live database.
 -- ------------------------------------------------------------
 create table if not exists page_views (
   id bigint generated always as identity primary key,
@@ -178,8 +187,10 @@ where s.creator_id = t.creator_id
   and lower(s.email) = lower(t.email)
   and s.id > t.id;
 
-create unique index if not exists subscribers_creator_email_uniq
+create unique index if not exists subscribers_creator_id_email_key
   on subscribers (creator_id, lower(email));
+create index if not exists subscribers_creator_id_created_at_idx
+  on subscribers (creator_id, created_at desc);
 
 -- ------------------------------------------------------------
 -- SIGNUP RATE LIMITING
@@ -191,27 +202,54 @@ create table if not exists signup_log (
   created_at timestamptz default now()
 );
 
-create index if not exists signup_log_ip_created_idx on signup_log (ip, created_at desc);
+create index if not exists signup_log_ip_created_at_idx on signup_log (ip, created_at desc);
+
+-- ------------------------------------------------------------
+-- ROTATION: even, race-free round robin
+--
+-- Picking at random skews badly at low click volumes, which is
+-- exactly where these pools live. This increments a counter on the
+-- row and returns it in one statement, so concurrent clicks cannot
+-- read the same index. search_path is pinned so the function cannot
+-- be hijacked by a caller-supplied schema.
+-- ------------------------------------------------------------
+create or replace function next_rotation_index(link_id uuid, pool_size int)
+returns int
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare idx int;
+begin
+  if pool_size is null or pool_size < 1 then
+    return 0;
+  end if;
+  update links
+     set rotation_index = (coalesce(rotation_index, 0) + 1) % pool_size
+   where id = link_id
+  returning rotation_index into idx;
+  return coalesce(idx, 0);
+end;
+$$;
 
 -- ------------------------------------------------------------
 -- INDEXES
 --
 -- The dashboard filters by creator_id and orders by created_at on
--- every load. Without these, each dashboard view is a sequential
--- scan and gets slower as traffic grows.
+-- every load. Names below match the live database exactly.
 -- ------------------------------------------------------------
-create index if not exists page_views_creator_created_idx on page_views (creator_id, created_at desc);
-create index if not exists link_clicks_creator_created_idx on link_clicks (creator_id, created_at desc);
-create index if not exists link_clicks_link_idx on link_clicks (link_id);
-create index if not exists links_creator_position_idx on links (creator_id, position);
-create index if not exists subscribers_creator_created_idx on subscribers (creator_id, created_at desc);
+create index if not exists page_views_creator_id_created_at_idx on page_views (creator_id, created_at desc);
+create index if not exists link_clicks_creator_id_created_at_idx on link_clicks (creator_id, created_at desc);
+create index if not exists link_clicks_link_id_idx on link_clicks (link_id);
+create index if not exists links_creator_id_position_idx on links (creator_id, position);
 
 -- ------------------------------------------------------------
 -- ROW LEVEL SECURITY
 --
 -- Every write happens server-side with the service role key, which
 -- bypasses RLS. RLS is enabled with no public policies, so the anon
--- key cannot read or write these tables directly.
+-- key cannot read or write these tables directly. The Supabase
+-- linter reports "RLS enabled, no policy" as INFO for each table;
+-- that is the intended state for this app, not a finding.
 -- ------------------------------------------------------------
 alter table creators enable row level security;
 alter table links enable row level security;
@@ -222,6 +260,10 @@ alter table signup_log enable row level security;
 
 -- ------------------------------------------------------------
 -- SEED the demo creator
+--
+-- The live database already holds a real 'ava' row created
+-- 2026-07-03 with 8 links and its own styling, so this insert is a
+-- no-op there. It only matters on a fresh project.
 -- ------------------------------------------------------------
 insert into creators (handle, display_name)
 select 'ava', 'Ava'
@@ -243,3 +285,8 @@ where not exists (select 1 from creators where handle = 'ava');
 --  where table_schema = 'public'
 --  group by table_name
 --  order by table_name;
+--
+-- select tablename, indexname
+--   from pg_indexes
+--  where schemaname = 'public'
+--  order by tablename, indexname;

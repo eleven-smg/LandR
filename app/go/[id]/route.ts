@@ -21,6 +21,28 @@ function normalizeUrl(raw: string): string | null {
   }
 }
 
+// Random selection is uneven exactly where rotation pools are used: at low
+// click counts a 2-URL pool can send eight of ten clicks the same way, which
+// makes split-testing results meaningless. next_rotation_index increments a
+// counter on the row and returns it atomically, so concurrent clicks cannot
+// read the same value. If the function has not been installed yet, fall back
+// to random rather than failing the redirect.
+async function pickRotationIndex(linkId: string, poolSize: number): Promise<number> {
+  if (poolSize <= 1) return 0
+  const { data, error } = await supabaseAdmin.rpc("next_rotation_index", {
+    link_id: linkId,
+    pool_size: poolSize,
+  })
+  if (error || typeof data !== "number") {
+    console.error(
+      "next_rotation_index unavailable, falling back to random selection:",
+      error?.message ?? "unexpected return type",
+    )
+    return Math.floor(Math.random() * poolSize)
+  }
+  return ((data % poolSize) + poolSize) % poolSize
+}
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
 
@@ -40,12 +62,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     if (rule) destinationUrl = rule.url
   }
 
-  // 2) Rotation: serve a random URL from the pool.
+  // 2) Rotation: serve the next URL in the pool, evenly.
   if (!destinationUrl && link.rotate) {
     const pool = (link.rotation_urls || []) as string[]
     const clean = pool.filter((u) => typeof u === "string" && u.trim().length > 0)
     if (clean.length > 0) {
-      destinationUrl = clean[Math.floor(Math.random() * clean.length)]
+      destinationUrl = clean[await pickRotationIndex(link.id, clean.length)]
     }
   }
 
