@@ -21,6 +21,26 @@ function normalizeUrl(raw: string): string | null {
   }
 }
 
+// True round-robin. The database does the increment and the read in a single
+// atomic statement, so two simultaneous clicks cannot be handed the same slot.
+// If next_rotation_index() has not been installed yet (sql/schema.sql not run),
+// fall back to random rather than failing the click.
+async function pickRotationIndex(linkId: string, poolSize: number): Promise<number> {
+  const { data, error } = await supabaseAdmin.rpc("next_rotation_index", {
+    link_id: linkId,
+    pool_size: poolSize,
+  })
+
+  if (error || typeof data !== "number") {
+    if (error) {
+      console.error("[routing] next_rotation_index unavailable, using random:", error.code, error.message)
+    }
+    return Math.floor(Math.random() * poolSize)
+  }
+
+  return ((data % poolSize) + poolSize) % poolSize
+}
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
 
@@ -40,12 +60,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     if (rule) destinationUrl = rule.url
   }
 
-  // 2) Rotation: serve a random URL from the pool.
+  // 2) Rotation pool, spread evenly.
   if (!destinationUrl && link.rotate) {
     const pool = (link.rotation_urls || []) as string[]
     const clean = pool.filter((u) => typeof u === "string" && u.trim().length > 0)
-    if (clean.length > 0) {
-      destinationUrl = clean[Math.floor(Math.random() * clean.length)]
+    if (clean.length === 1) {
+      destinationUrl = clean[0]
+    } else if (clean.length > 1) {
+      const idx = await pickRotationIndex(String(link.id), clean.length)
+      destinationUrl = clean[idx]
     }
   }
 
