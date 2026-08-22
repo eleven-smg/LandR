@@ -1,146 +1,336 @@
+import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
-import Charts from "./Charts"
+import BreakdownCard from "./BreakdownCard"
+import TrafficChart from "./TrafficChart"
+import type { Point } from "./TrafficChart"
 
 export const dynamic = "force-dynamic"
 
-export default async function DashboardPage({
+type ViewRow = {
+  created_at: string
+  country: string | null
+  region: string | null
+  city: string | null
+  device: string | null
+  browser: string | null
+  os: string | null
+  referrer: string | null
+  source: string | null
+  path: string | null
+}
+
+type ClickRow = { created_at: string; destination_url: string | null }
+
+const RANGES = [
+  { key: "day", label: "Day", days: 1 },
+  { key: "week", label: "Week", days: 7 },
+  { key: "month", label: "Month", days: 30 },
+  { key: "year", label: "Year", days: 365 },
+]
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+const NEEDS_TRACKING =
+  "Not collected yet. This needs a visitor cookie and session tracking, which the analytics tables do not have."
+
+function fmtDate(d: Date) {
+  return d.getUTCDate() + " " + MONTHS[d.getUTCMonth()] + " " + d.getUTCFullYear()
+}
+
+function tally(values: Array<string | null | undefined>, limit: number) {
+  const m = new Map<string, number>()
+  for (const v of values) {
+    const k = (v || "").trim()
+    if (!k) continue
+    m.set(k, (m.get(k) || 0) + 1)
+  }
+  return Array.from(m.entries())
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, limit)
+}
+
+function hostOf(raw: string | null) {
+  try {
+    return new URL(String(raw)).hostname.replace("www.", "")
+  } catch {
+    return ""
+  }
+}
+
+function changePct(now: number, before: number) {
+  if (before === 0) return now > 0 ? 100 : 0
+  return Math.round(((now - before) / before) * 1000) / 10
+}
+
+function Change({ value }: { value: number }) {
+  const down = value < 0
+  const arrow = down ? "\u2193" : "\u2191"
+  return (
+    <div className={down ? "stat-change down" : "stat-change"}>
+      {arrow} {Math.abs(value)}%
+    </div>
+  )
+}
+
+export default async function AnalyticsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ handle: string }>
+  searchParams: Promise<{ range?: string }>
 }) {
   const { handle } = await params
+  const sp = await searchParams
+  const range = RANGES.find((r) => r.key === sp.range) || RANGES[1]
 
-  const { data: creator } = await supabaseAdmin
+  const { data: creatorData } = await supabaseAdmin
     .from("creators")
-    .select("*")
+    .select("id, handle, display_name")
     .eq("handle", handle)
     .single()
 
+  const creator = creatorData as { id: string; handle: string; display_name: string | null } | null
+
   if (!creator) {
     return (
-      <main className="min-h-screen bg-neutral-950 p-8 text-neutral-300">
-        <p>No creator found for that handle.</p>
-      </main>
+      <div className="page-header">
+        <div className="page-title">No page called &ldquo;{handle}&rdquo;</div>
+        <div className="page-sub">Check the handle in the address bar.</div>
+      </div>
     )
   }
 
-  const { data: viewsData } = await supabaseAdmin
-    .from("page_views")
-    .select("created_at, source, device")
-    .eq("creator_id", creator.id)
-    .limit(5000)
+  const now = new Date()
+  const span = range.days * 24 * 60 * 60 * 1000
+  const since = new Date(now.getTime() - span)
+  const prevSince = new Date(now.getTime() - 2 * span)
 
-  const { data: clicksData } = await supabaseAdmin
-    .from("link_clicks")
-    .select("created_at, link_id")
-    .eq("creator_id", creator.id)
-    .limit(5000)
+  const [curRes, prevRes, clickRes, prevClickRes] = await Promise.all([
+    supabaseAdmin
+      .from("page_views")
+      .select("created_at, country, region, city, device, browser, os, referrer, source, path")
+      .eq("creator_id", creator.id)
+      .gte("created_at", since.toISOString())
+      .limit(20000),
+    supabaseAdmin
+      .from("page_views")
+      .select("created_at")
+      .eq("creator_id", creator.id)
+      .gte("created_at", prevSince.toISOString())
+      .lt("created_at", since.toISOString())
+      .limit(20000),
+    supabaseAdmin
+      .from("link_clicks")
+      .select("created_at, destination_url")
+      .eq("creator_id", creator.id)
+      .gte("created_at", since.toISOString())
+      .limit(20000),
+    supabaseAdmin
+      .from("link_clicks")
+      .select("created_at")
+      .eq("creator_id", creator.id)
+      .gte("created_at", prevSince.toISOString())
+      .lt("created_at", since.toISOString())
+      .limit(20000),
+  ])
 
-  const { data: linksData } = await supabaseAdmin
-    .from("links")
-    .select("id, label")
-    .eq("creator_id", creator.id)
+  const views = (curRes.data || []) as unknown as ViewRow[]
+  const prevViews = (prevRes.data || []) as unknown as Array<{ created_at: string }>
+  const clicks = (clickRes.data || []) as unknown as ClickRow[]
+  const prevClicks = (prevClickRes.data || []) as unknown as Array<{ created_at: string }>
 
-  const views = viewsData || []
-  const clicks = clicksData || []
-  const links = linksData || []
+  // Single pass per dataset. Filtering once per bucket would be 365 x 20000
+  // comparisons on the year range.
+  const hourly = range.days <= 1
+  const buckets = hourly ? 24 : range.days
+  const step = hourly ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000
+  const start = now.getTime() - buckets * step
+  const vCounts = new Array<number>(buckets).fill(0)
+  const cCounts = new Array<number>(buckets).fill(0)
 
-  const totalViews = views.length
-  const totalClicks = clicks.length
-  const ctr = totalViews > 0 ? Math.round((totalClicks / totalViews) * 1000) / 10 : 0
-
-  const days: string[] = []
-  const today = new Date()
-  for (let i = 13; i >= 0; i--) {
-    const d = new Date(today)
-    d.setDate(today.getDate() - i)
-    days.push(d.toISOString().slice(0, 10))
+  for (const r of views) {
+    const i = Math.floor((Date.parse(r.created_at) - start) / step)
+    if (i >= 0 && i < buckets) vCounts[i] = vCounts[i] + 1
   }
-  const viewsByDay: Record<string, number> = {}
-  const clicksByDay: Record<string, number> = {}
-  for (const day of days) {
-    viewsByDay[day] = 0
-    clicksByDay[day] = 0
+  for (const r of clicks) {
+    const i = Math.floor((Date.parse(r.created_at) - start) / step)
+    if (i >= 0 && i < buckets) cCounts[i] = cCounts[i] + 1
   }
-  for (const v of views) {
-    const k = String(v.created_at).slice(0, 10)
-    if (k in viewsByDay) viewsByDay[k] += 1
-  }
-  for (const c of clicks) {
-    const k = String(c.created_at).slice(0, 10)
-    if (k in clicksByDay) clicksByDay[k] += 1
-  }
-  const daily = days.map((day) => ({
-    day: day.slice(5),
-    views: viewsByDay[day],
-    clicks: clicksByDay[day],
-  }))
 
-  const labelById: Record<string, string> = {}
-  for (const l of links) labelById[l.id] = l.label
-  const clickCountById: Record<string, number> = {}
-  for (const c of clicks) {
-    const id = String(c.link_id)
-    clickCountById[id] = (clickCountById[id] || 0) + 1
-  }
-  const byLink = Object.keys(clickCountById).map((id) => ({
-    name: labelById[id] || "Unknown",
-    value: clickCountById[id],
-  }))
+  const series: Point[] = vCounts.map((v, i) => {
+    const d = new Date(start + i * step)
+    const label = hourly
+      ? String(d.getUTCHours()).padStart(2, "0") + ":00"
+      : d.getUTCDate() + " " + MONTHS[d.getUTCMonth()]
+    return { label, views: v, clicks: cCounts[i] }
+  })
 
-  const sourceCount: Record<string, number> = {}
-  for (const v of views) {
-    const s = v.source || "direct"
-    sourceCount[s] = (sourceCount[s] || 0) + 1
-  }
-  const bySource = Object.keys(sourceCount).map((name) => ({
-    name,
-    value: sourceCount[name],
-  }))
+  const fiveMinAgo = now.getTime() - 5 * 60 * 1000
+  const active = views.filter((r) => Date.parse(r.created_at) >= fiveMinAgo).length
+  const ctr = views.length > 0 ? Math.round((clicks.length / views.length) * 1000) / 10 : 0
 
-  const deviceCount: Record<string, number> = {}
-  for (const v of views) {
-    const dv = v.device || "desktop"
-    deviceCount[dv] = (deviceCount[dv] || 0) + 1
-  }
-  const byDevice = Object.keys(deviceCount).map((name) => ({
-    name,
-    value: deviceCount[name],
-  }))
+  const pages = tally(
+    views.map((r) => r.path),
+    8,
+  )
+  const domains = tally(
+    views.map((r) => hostOf(r.referrer)),
+    8,
+  )
+  const referrers = tally(
+    views.map((r) => r.referrer),
+    8,
+  )
+  const sources = tally(
+    views.map((r) => r.source),
+    8,
+  )
+  const countries = tally(
+    views.map((r) => r.country),
+    8,
+  )
+  const regions = tally(
+    views.map((r) => r.region),
+    8,
+  )
+  const cities = tally(
+    views.map((r) => r.city),
+    8,
+  )
+  const oses = tally(
+    views.map((r) => r.os),
+    8,
+  )
+  const browsers = tally(
+    views.map((r) => r.browser),
+    8,
+  )
+  const devices = tally(
+    views.map((r) => r.device),
+    8,
+  )
+  const clickUrls = tally(
+    clicks.map((r) => r.destination_url),
+    8,
+  )
+  const clickDomains = tally(
+    clicks.map((r) => hostOf(r.destination_url)),
+    8,
+  )
+
+  const name = creator.display_name || creator.handle
 
   return (
-    <main className="min-h-screen bg-neutral-950 px-5 py-10 text-neutral-100">
-      <div className="mx-auto w-full max-w-4xl">
-        <div className="mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight">{creator.display_name} &mdash; Analytics</h1>
-          <p className="text-sm text-neutral-500">/{creator.handle}</p>
-          <div className="mt-3 flex gap-4 text-sm">
-            <a href={"/dashboard/" + creator.handle + "/edit"} className="text-indigo-400 hover:underline">
-              Edit page &rarr;
-            </a>
-            <a href={"/" + creator.handle} className="text-neutral-400 hover:underline">
-              View public page &rarr;
-            </a>
-          </div>
+    <div>
+      <div className="page-header">
+        <div className="page-title">Welcome back {name}</div>
+        <div className="page-sub">
+          Traffic for /{creator.handle} &mdash;{" "}
+          <Link className="dash-link" href={"/" + creator.handle}>
+            view public page &rarr;
+          </Link>
         </div>
-
-        <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-5">
-            <p className="text-sm text-neutral-500">Total views</p>
-            <p className="mt-1 text-3xl font-semibold">{totalViews}</p>
-          </div>
-          <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-5">
-            <p className="text-sm text-neutral-500">Total clicks</p>
-            <p className="mt-1 text-3xl font-semibold">{totalClicks}</p>
-          </div>
-          <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-5">
-            <p className="text-sm text-neutral-500">Click-through rate</p>
-            <p className="mt-1 text-3xl font-semibold">{ctr}%</p>
-          </div>
-        </div>
-
-        <Charts daily={daily} byLink={byLink} bySource={bySource} byDevice={byDevice} />
       </div>
-    </main>
+
+      <div className="filter-bar">
+        <div className="period-tabs">
+          {RANGES.map((r) => (
+            <Link
+              key={r.key}
+              href={"?range=" + r.key}
+              className={r.key === range.key ? "period-tab active" : "period-tab"}
+            >
+              {r.label}
+            </Link>
+          ))}
+        </div>
+        <div className="date-range">
+          {fmtDate(since)} &ndash; {fmtDate(now)}
+        </div>
+      </div>
+
+      <div className="stats-grid">
+        <div className="stat-card">
+          <div className="stat-label">Active Visitors</div>
+          <div className="stat-value">{active}</div>
+          <div className="stat-note">Views in the last 5 minutes.</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Views</div>
+          <div className="stat-value">{views.length}</div>
+          <Change value={changePct(views.length, prevViews.length)} />
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Link Clicks</div>
+          <div className="stat-value">{clicks.length}</div>
+          <Change value={changePct(clicks.length, prevClicks.length)} />
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Click Rate</div>
+          <div className="stat-value">{ctr}%</div>
+          <div className="stat-note">Clicks divided by views.</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Unique Visitors</div>
+          <div className="stat-value">&mdash;</div>
+          <div className="stat-note">{NEEDS_TRACKING}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Session Duration</div>
+          <div className="stat-value">&mdash;</div>
+          <div className="stat-note">{NEEDS_TRACKING}</div>
+        </div>
+      </div>
+
+      <div className="chart-card">
+        <div className="chart-title">Visitor Traffic</div>
+        <div className="chart-wrap">
+          <TrafficChart data={series} />
+        </div>
+      </div>
+
+      <div className="breakdown-grid">
+        <BreakdownCard
+          tabs={[
+            { label: "Pages", rows: pages },
+            { label: "Entry Pages", note: NEEDS_TRACKING },
+            { label: "Exit Pages", note: NEEDS_TRACKING },
+            { label: "Domains", rows: domains },
+          ]}
+        />
+        <BreakdownCard
+          tabs={[
+            { label: "Referrers", rows: referrers },
+            { label: "Channels", rows: sources },
+            { label: "Sources", rows: sources },
+            { label: "Mediums", note: "Needs UTM capture on the public page." },
+          ]}
+        />
+        <BreakdownCard
+          tabs={[
+            { label: "Countries", rows: countries },
+            { label: "Regions", rows: regions },
+            { label: "Cities", rows: cities },
+            { label: "Languages", note: "Needs the Accept-Language header stored on each view." },
+          ]}
+        />
+        <BreakdownCard
+          tabs={[
+            { label: "OS", rows: oses },
+            { label: "Browsers", rows: browsers },
+            { label: "Platforms", rows: devices },
+            { label: "Screens", note: "Needs screen size reported from the browser." },
+          ]}
+        />
+        <BreakdownCard tabs={[{ label: "Events", note: "No events table yet. Clicks are tracked separately." }]} />
+        <BreakdownCard
+          tabs={[
+            { label: "Clicks by url", rows: clickUrls },
+            { label: "By domain", rows: clickDomains },
+          ]}
+        />
+      </div>
+    </div>
   )
 }
