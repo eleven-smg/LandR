@@ -83,6 +83,20 @@ const tierNote: CSSProperties = { color: "#6b7396", fontSize: 11, marginTop: 2, 
 const hint: CSSProperties = { color: "#6b7396", fontSize: 11, marginTop: 10 }
 const addRow: CSSProperties = { display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }
 const count: CSSProperties = { color: "#8892a4", fontSize: 12 }
+const choice: CSSProperties = {
+  display: "flex",
+  gap: 10,
+  alignItems: "flex-start",
+  padding: "12px 13px",
+  borderRadius: 10,
+  border: "1px solid #232940",
+  background: "#0f1117",
+  marginBottom: 10,
+  cursor: "pointer",
+}
+const choiceOn: CSSProperties = { ...choice, borderColor: "#5b7fff", background: "rgba(91,127,255,0.08)" }
+const choiceTitle: CSSProperties = { fontSize: 13, fontWeight: 600, color: "#e2e8f0" }
+const choiceNote: CSSProperties = { fontSize: 12, color: "#8892a4", marginTop: 3, lineHeight: 1.45 }
 
 export default function CountryPicker({
   handle,
@@ -96,6 +110,11 @@ export default function CountryPicker({
   const [sel, setSel] = useState<string[]>(initial)
   const [open, setOpen] = useState<string>("")
   const [manual, setManual] = useState("")
+  // Empty redirect field means "show them my normal page", which is what the
+  // agency wants: the visitor never sees a block screen, only the per-link
+  // country rules send them somewhere else.
+  const [mode, setMode] = useState<string>(redirectUrl ? "url" : "page")
+  const [url, setUrl] = useState(redirectUrl)
 
   function toggle(code: string) {
     setSel((s) => (s.includes(code) ? s.filter((c) => c !== code) : s.concat(code)))
@@ -120,17 +139,18 @@ export default function CountryPicker({
     <form action={saveBlockedCountries}>
       <input type="hidden" name="handle" value={handle} />
       <input type="hidden" name="blocked_countries" value={sel.join(",")} />
+      <input type="hidden" name="blocked_redirect_url" value={mode === "url" ? url : ""} />
 
       <div style={card}>
-        <h3 style={h3s}>Blocked Countries</h3>
+        <h3 style={h3s}>Countries treated differently</h3>
         {sel.length === 0 ? (
-          <div style={empty}>No countries blocked. Pick a group or add countries below.</div>
+          <div style={empty}>No countries listed. Pick a group or add countries below.</div>
         ) : (
           <div style={tagWrap}>
             {sel.map((c) => (
               <span key={c} style={tag}>
                 {nameFor(c)}
-                <button type="button" style={tagX} onClick={() => toggle(c)} aria-label={"Unblock " + c}>
+                <button type="button" style={tagX} onClick={() => toggle(c)} aria-label={"Remove " + c}>
                   &#215;
                 </button>
               </span>
@@ -149,10 +169,10 @@ export default function CountryPicker({
                   <div style={tierNote}>{t.note}</div>
                 </div>
                 <span style={count}>
-                  {on} / {codes.length} blocked
+                  {on} / {codes.length} listed
                 </span>
                 <button type="button" style={ghost} onClick={() => blockAll(codes)}>
-                  Block all
+                  Add all
                 </button>
                 <button type="button" style={ghost} onClick={() => unblockAll(codes)}>
                   Clear
@@ -188,19 +208,58 @@ export default function CountryPicker({
         </div>
         <p style={hint}>
           Codes are ISO 3166 alpha-2. Groups are a shortcut only, you can add or remove any single country. Country
-          detection comes from Vercel and is blank on localhost.
+          detection comes from Vercel and is blank on localhost, so nothing is blocked while you test on your own PC.
         </p>
       </div>
 
       <div style={card}>
-        <h3 style={h3s}>Redirect URL</h3>
-        <p style={sub}>Blocked visitors will be sent to this URL instead of seeing a blank page</p>
-        <input
-          style={{ ...input, width: "100%", maxWidth: 400 }}
-          name="blocked_redirect_url"
-          defaultValue={redirectUrl}
-          placeholder="https://example.com/redirect"
-        />
+        <h3 style={h3s}>What those countries see</h3>
+        <p style={sub}>Both options keep working with the per-link country rules in the page editor.</p>
+
+        <label style={mode === "page" ? choiceOn : choice}>
+          <input
+            type="radio"
+            name="blocked_mode"
+            value="page"
+            checked={mode === "page"}
+            onChange={() => setMode("page")}
+            style={{ marginTop: 3 }}
+          />
+          <span>
+            <span style={choiceTitle}>Show them my normal page (recommended)</span>
+            <span style={choiceNote}>
+              No block screen and no redirect. They land on your page exactly like everyone else. What changes is where
+              individual buttons send them: set a country rule on the Telegram button in the page editor and this group
+              gets that link, while Instagram stays the same for the whole world. Any link without a rule behaves
+              identically for everybody.
+            </span>
+          </span>
+        </label>
+
+        <label style={mode === "url" ? choiceOn : choice}>
+          <input
+            type="radio"
+            name="blocked_mode"
+            value="url"
+            checked={mode === "url"}
+            onChange={() => setMode("url")}
+            style={{ marginTop: 3 }}
+          />
+          <span style={{ width: "100%" }}>
+            <span style={choiceTitle}>Send them somewhere else entirely</span>
+            <span style={choiceNote}>
+              They never see your page. Use this only if the agency wants a country pushed to another site.
+            </span>
+            <input
+              style={{ ...input, width: "100%", maxWidth: 400, marginTop: 10 }}
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              onFocus={() => setMode("url")}
+              placeholder="https://example.com/redirect"
+            />
+          </span>
+        </label>
+
         <div style={{ marginTop: 14 }}>
           <button style={primary} type="submit">
             Save geoblocking

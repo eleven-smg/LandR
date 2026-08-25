@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
+import { likeSafeHandle } from "@/lib/handles"
 import type { CSSProperties } from "react"
 import CountryPicker from "./CountryPicker"
 import RotationGroups from "./RotationGroups"
@@ -18,8 +19,9 @@ export default async function GeoblockingPage({ params }: { params: Promise<{ ha
   const { data: creator } = await supabaseAdmin
     .from("creators")
     .select("id, handle, blocked_countries, blocked_redirect_url")
-    .eq("handle", handle)
-    .single()
+    .ilike("handle", likeSafeHandle(handle))
+    .limit(1)
+    .maybeSingle()
 
   if (!creator) return <main style={nf}>Creator not found.</main>
 
@@ -40,16 +42,16 @@ export default async function GeoblockingPage({ params }: { params: Promise<{ ha
     <div style={wrap}>
       <div style={head}>
         <div style={title}>Geoblocking</div>
-        <div style={sub}>Block visitors from specific countries and redirect them elsewhere</div>
+        <div style={sub}>Pick the countries that get treated differently, then choose what they see</div>
       </div>
 
       <CountryPicker
-        handle={creator.handle}
+        handle={String(creator.handle)}
         initial={((creator.blocked_countries as string[]) || []).map((c) => String(c).toUpperCase())}
         redirectUrl={String(creator.blocked_redirect_url || "")}
       />
 
-      <RotationGroups handle={creator.handle} items={items} />
+      <RotationGroups handle={String(creator.handle)} items={items} />
     </div>
   )
 }

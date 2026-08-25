@@ -115,17 +115,14 @@ export default async function CreatorPage({
   if (!isPreview) {
     const meta = await getRequestMeta()
     const blocked = (creator.blocked_countries || []) as string[]
-    if (meta.country && blocked.includes(meta.country)) {
-      if (creator.blocked_redirect_url) {
-        redirect(String(creator.blocked_redirect_url))
-      }
-      return (
-        <main className="flex min-h-screen flex-col items-center justify-center bg-black px-6 text-center text-white/70">
-          <div className="text-4xl">&#128683;</div>
-          <h1 className="mt-4 text-xl font-semibold text-white">Not available in your region</h1>
-          <p className="mt-2 max-w-sm text-sm">This page isn&rsquo;t accessible from your location.</p>
-        </main>
-      )
+
+    // A listed country is only sent away when a redirect URL is actually set.
+    // With the field empty, the visitor sees the normal page and it is the
+    // per-link country rules that change: a Telegram button can point somewhere
+    // else for that country while Instagram stays the same for everybody. That
+    // swap happens in /go/[id], so nothing here needs to know about it.
+    if (meta.country && blocked.includes(meta.country) && creator.blocked_redirect_url) {
+      redirect(String(creator.blocked_redirect_url))
     }
 
     // Logged against the real handle, so /Ava and /ava are one page in analytics.
