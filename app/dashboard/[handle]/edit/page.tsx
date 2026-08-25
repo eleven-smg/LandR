@@ -3,11 +3,14 @@ import type { CSSProperties } from "react"
 import Builder from "./Builder"
 import ProfileForm from "./ProfileForm"
 import SaveButton from "./SaveButton"
+import ActionForm from "./ActionForm"
+import SectionOrder from "./SectionOrder"
+import AvatarCard from "./AvatarCard"
+import { likeSafeHandle } from "@/lib/handles"
 import { SECTION_LABELS, normalizeOrder } from "@/lib/sections"
 import { clampPercent, clampZoom, normalizeSubscribeStyle, normalizeTemplate } from "@/lib/templates"
 import {
   saveProfile,
-  moveSection,
   addSocial,
   updateSocial,
   deleteSocial,
@@ -23,7 +26,8 @@ import {
   saveLayout,
   saveGeoRules,
 } from "./actions"
-import { saveIcon, removeIcon, addLinkFull, saveAvatar, removeAvatar } from "./mediaActions"
+import { saveSectionOrder } from "./orderActions"
+import { saveIcon, removeIcon, addLinkFull } from "./mediaActions"
 
 export const dynamic = "force-dynamic"
 
@@ -122,33 +126,12 @@ const okTag: CSSProperties = { color: "#4ade80", fontSize: 12 }
 const fileIn: CSSProperties = { ...input, flex: 1, marginTop: 0, minWidth: 150, padding: "6px 8px" }
 const previewTitle: CSSProperties = { fontSize: 13, fontWeight: 600, alignSelf: "flex-start" }
 const previewNote: CSSProperties = { color: "#6b7396", fontSize: 11, textAlign: "center" }
-const avatarImg: CSSProperties = {
-  width: 60,
-  height: 60,
-  borderRadius: "50%",
-  objectFit: "cover",
-  border: "1px solid #232940",
-}
 const thumb: CSSProperties = {
   width: 54,
   height: 84,
   borderRadius: 8,
   objectFit: "cover",
   border: "1px solid #232940",
-}
-const orderRow: CSSProperties = { ...rowStyle, borderTop: "1px solid #232940", paddingTop: 8, marginTop: 8 }
-const orderName: CSSProperties = { flex: 1, fontSize: 13, minWidth: 150 }
-const orderNum: CSSProperties = {
-  width: 22,
-  height: 22,
-  borderRadius: 6,
-  background: "#232940",
-  color: "#9aa4c2",
-  fontSize: 11,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  flexShrink: 0,
 }
 const tag: CSSProperties = { fontSize: 11, color: "#9aa4c2", background: "#232940", borderRadius: 6, padding: "2px 7px" }
 const arrow: CSSProperties = {
@@ -162,7 +145,15 @@ const arrow: CSSProperties = {
 
 export default async function EditPage({ params }: { params: Promise<{ handle: string }> }) {
   const { handle } = await params
-  const { data: creator } = await supabaseAdmin.from("creators").select("*").eq("handle", handle).single()
+
+  // Matched without case, so /dashboard/Ava/edit opens the same page as /ava.
+  const { data: creator } = await supabaseAdmin
+    .from("creators")
+    .select("*")
+    .ilike("handle", likeSafeHandle(handle))
+    .limit(1)
+    .maybeSingle()
+
   if (!creator) return <main style={nf}>Creator not found.</main>
 
   // These two used to run one after the other, which made the editor feel slow.
@@ -226,7 +217,11 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
           <a href={"/" + creator.handle} style={link}>
             View public page &rarr;
           </a>
-          <span style={hint2}> Every panel opens and closes. Buttons say &quot;Saving...&quot; then &quot;Saved&quot;, so you never have to guess.</span>
+          <span style={hint2}>
+            {" "}
+            A save button says <b>unsaved</b> the moment you change something, <b>Saving...</b> while it works, then
+            <b> Saved</b>. The blue bar at the very top of the screen means the site is still busy.
+          </span>
         </p>
 
         <div style={grid}>
@@ -235,27 +230,14 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
               <summary style={sumRow}>
                 Profile photo {creator.photo_url ? <span style={okTag}>&#10003;</span> : <span style={tag}>none yet</span>}
               </summary>
-              <div style={row8}>
-                {creator.photo_url ? (
-                  <img src={String(creator.photo_url)} alt="" style={avatarImg} />
-                ) : (
-                  <span style={albl}>No photo yet &mdash; the page shows your first letter instead.</span>
-                )}
-              </div>
-              <form action={saveAvatar} encType="multipart/form-data" style={row8}>
-                <input type="hidden" name="handle" value={creator.handle} />
-                <input type="hidden" name="creator_id" value={creator.id} />
-                <input style={fileIn} type="file" name="photo_file" accept="image/*" />
-                <input style={subin} name="photo_url" placeholder="or paste an image URL" />
-                <SaveButton label="Save photo" variant="ghost" />
-              </form>
-              {creator.photo_url ? (
-                <form action={removeAvatar} style={row8}>
-                  <input type="hidden" name="handle" value={creator.handle} />
-                  <SaveButton label="Remove photo" variant="danger" confirm="Remove the profile photo?" />
-                </form>
-              ) : null}
-              <p style={hint}>Square images look best. Each upload gets a fresh filename, so a new photo shows immediately.</p>
+              <AvatarCard
+                handle={String(creator.handle)}
+                creatorId={String(creator.id)}
+                photoUrl={String(creator.photo_url || "")}
+                posX={clampPercent(creator.photo_pos_x, 50)}
+                posY={clampPercent(creator.photo_pos_y, 50)}
+                zoom={clampZoom(creator.photo_zoom)}
+              />
             </details>
 
             <details style={card} open>
@@ -275,20 +257,20 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
                 {bgImageUrl ? <img src={bgImageUrl} alt="" style={thumb} /> : null}
                 {bgVideoUrl ? <video src={bgVideoUrl} muted playsInline style={thumb} /> : null}
               </div>
-              <form action={uploadBackground} encType="multipart/form-data" style={row8}>
+              <ActionForm action={uploadBackground} encType="multipart/form-data" style={row8}>
                 <input type="hidden" name="handle" value={creator.handle} />
                 <input type="hidden" name="creator_id" value={creator.id} />
                 <input type="hidden" name="kind" value="image" />
                 <input style={fileIn} type="file" name="file" accept="image/*" />
                 <SaveButton label="Upload photo" variant="ghost" />
-              </form>
-              <form action={uploadBackground} encType="multipart/form-data" style={row8}>
+              </ActionForm>
+              <ActionForm action={uploadBackground} encType="multipart/form-data" style={row8}>
                 <input type="hidden" name="handle" value={creator.handle} />
                 <input type="hidden" name="creator_id" value={creator.id} />
                 <input type="hidden" name="kind" value="video" />
                 <input style={fileIn} type="file" name="file" accept="video/*" />
                 <SaveButton label="Upload video" variant="ghost" />
-              </form>
+              </ActionForm>
               <p style={hint}>
                 The old file is deleted and the new one gets its own name, so the page can never show a stale picture.
               </p>
@@ -297,28 +279,12 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
             <details style={card}>
               <summary style={sumStyle}>Order of the sections on your page</summary>
               <p style={hint2}>Top of this list is top of your page. Put the email box first if you want.</p>
-              {order.map((key, i) => (
-                <div key={key} style={orderRow}>
-                  <span style={orderNum}>{i + 1}</span>
-                  <span style={orderName}>{SECTION_LABELS[key]}</span>
-                  <form action={moveSection}>
-                    <input type="hidden" name="handle" value={creator.handle} />
-                    <input type="hidden" name="key" value={key} />
-                    <input type="hidden" name="direction" value="up" />
-                    <button style={arrow} type="submit" disabled={i === 0}>
-                      &uarr;
-                    </button>
-                  </form>
-                  <form action={moveSection}>
-                    <input type="hidden" name="handle" value={creator.handle} />
-                    <input type="hidden" name="key" value={key} />
-                    <input type="hidden" name="direction" value="down" />
-                    <button style={arrow} type="submit" disabled={i === order.length - 1}>
-                      &darr;
-                    </button>
-                  </form>
-                </div>
-              ))}
+              <SectionOrder
+                handle={String(creator.handle)}
+                initial={order}
+                labels={SECTION_LABELS}
+                action={saveSectionOrder}
+              />
             </details>
 
             <details style={card} open>
@@ -342,7 +308,7 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
                       {hidden ? <span style={tag}>hidden</span> : null}
                     </summary>
 
-                    <form action={updateLink}>
+                    <ActionForm action={updateLink}>
                       <input type="hidden" name="handle" value={creator.handle} />
                       <input type="hidden" name="id" value={String(l.id)} />
                       <div style={row8}>
@@ -380,11 +346,11 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
                         </label>
                       </div>
                       <SaveButton label="Save link" />
-                    </form>
+                    </ActionForm>
 
                     <details style={item}>
                       <summary style={albl}>Images: button icon, preview banner, uploaded clip</summary>
-                      <form action={saveIcon} encType="multipart/form-data" style={vrow}>
+                      <ActionForm action={saveIcon} encType="multipart/form-data" style={vrow}>
                         <input type="hidden" name="handle" value={creator.handle} />
                         <input type="hidden" name="creator_id" value={creator.id} />
                         <input type="hidden" name="id" value={String(l.id)} />
@@ -392,9 +358,9 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
                         <input style={subin} name="icon_url" placeholder="or paste icon image URL" />
                         <SaveButton label="Save icon" variant="ghost" />
                         {l.icon ? <span style={okTag}>&#10003;</span> : null}
-                      </form>
+                      </ActionForm>
 
-                      <form action={savePreview} encType="multipart/form-data" style={vrow}>
+                      <ActionForm action={savePreview} encType="multipart/form-data" style={vrow}>
                         <input type="hidden" name="handle" value={creator.handle} />
                         <input type="hidden" name="creator_id" value={creator.id} />
                         <input type="hidden" name="id" value={String(l.id)} />
@@ -402,21 +368,21 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
                         <input style={subin} name="preview_url" placeholder="or paste image URL" />
                         <SaveButton label="Save preview" variant="ghost" />
                         {l.preview_image_url ? <span style={okTag}>&#10003;</span> : null}
-                      </form>
+                      </ActionForm>
 
-                      <form action={uploadVideo} encType="multipart/form-data" style={vrow}>
+                      <ActionForm action={uploadVideo} encType="multipart/form-data" style={vrow}>
                         <input type="hidden" name="handle" value={creator.handle} />
                         <input type="hidden" name="creator_id" value={creator.id} />
                         <input type="hidden" name="id" value={String(l.id)} />
                         <input style={fileIn} type="file" name="video" accept="video/*" />
                         <SaveButton label="Upload clip" variant="ghost" />
                         {l.media_url ? <span style={okTag}>&#10003;</span> : null}
-                      </form>
+                      </ActionForm>
                     </details>
 
                     <details style={item}>
                       <summary style={albl}>Country routing for this link</summary>
-                      <form action={saveGeoRules} style={row8}>
+                      <ActionForm action={saveGeoRules} style={row8}>
                         <input type="hidden" name="handle" value={creator.handle} />
                         <input type="hidden" name="id" value={String(l.id)} />
                         <label style={lbl}>
@@ -431,54 +397,50 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
                           />
                         </label>
                         <SaveButton label="Save country rules" variant="ghost" />
-                      </form>
+                      </ActionForm>
                       <p style={hint}>Link rotation lives in the Geoblocking tab so every rotation group sits in one place.</p>
                     </details>
 
                     <div style={row8}>
-                      <form action={moveLink}>
+                      <ActionForm action={moveLink}>
                         <input type="hidden" name="handle" value={creator.handle} />
                         <input type="hidden" name="creator_id" value={creator.id} />
                         <input type="hidden" name="id" value={String(l.id)} />
                         <input type="hidden" name="direction" value="up" />
-                        <button style={arrow} type="submit">
-                          &uarr;
-                        </button>
-                      </form>
-                      <form action={moveLink}>
+                        <SaveButton label="&uarr;" variant="ghost" />
+                      </ActionForm>
+                      <ActionForm action={moveLink}>
                         <input type="hidden" name="handle" value={creator.handle} />
                         <input type="hidden" name="creator_id" value={creator.id} />
                         <input type="hidden" name="id" value={String(l.id)} />
                         <input type="hidden" name="direction" value="down" />
-                        <button style={arrow} type="submit">
-                          &darr;
-                        </button>
-                      </form>
-                      <form action={deleteLink}>
+                        <SaveButton label="&darr;" variant="ghost" />
+                      </ActionForm>
+                      <ActionForm action={deleteLink}>
                         <input type="hidden" name="handle" value={creator.handle} />
                         <input type="hidden" name="id" value={String(l.id)} />
                         <SaveButton label="Delete" variant="danger" confirm={"Delete " + label + "?"} />
-                      </form>
+                      </ActionForm>
                       {l.icon ? (
-                        <form action={removeIcon}>
+                        <ActionForm action={removeIcon}>
                           <input type="hidden" name="handle" value={creator.handle} />
                           <input type="hidden" name="id" value={String(l.id)} />
                           <SaveButton label="Remove icon" variant="danger" />
-                        </form>
+                        </ActionForm>
                       ) : null}
                       {l.preview_image_url ? (
-                        <form action={removePreview}>
+                        <ActionForm action={removePreview}>
                           <input type="hidden" name="handle" value={creator.handle} />
                           <input type="hidden" name="id" value={String(l.id)} />
                           <SaveButton label="Remove preview" variant="danger" />
-                        </form>
+                        </ActionForm>
                       ) : null}
                       {l.media_url ? (
-                        <form action={removeVideo}>
+                        <ActionForm action={removeVideo}>
                           <input type="hidden" name="handle" value={creator.handle} />
                           <input type="hidden" name="id" value={String(l.id)} />
                           <SaveButton label="Remove clip" variant="danger" />
-                        </form>
+                        </ActionForm>
                       ) : null}
                     </div>
                   </details>
@@ -487,7 +449,7 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
 
               <details style={item} open={rows.length === 0}>
                 <summary style={sumRow}>+ Add a link, embed or video</summary>
-                <form action={addLinkFull} encType="multipart/form-data">
+                <ActionForm action={addLinkFull} encType="multipart/form-data" resetOnSave>
                   <input type="hidden" name="handle" value={creator.handle} />
                   <input type="hidden" name="creator_id" value={creator.id} />
                   <div style={row8}>
@@ -505,7 +467,7 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
                   </div>
                   <SaveButton label="Add link" />
                   <p style={hint}>Leave the icon empty and the site falls back to the favicon of the destination.</p>
-                </form>
+                </ActionForm>
               </details>
             </details>
 
@@ -515,42 +477,38 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
               </summary>
               {socials.map((s, i) => (
                 <div key={i} style={srow}>
-                  <form action={updateSocial} style={frow}>
+                  <ActionForm action={updateSocial} style={frow}>
                     <input type="hidden" name="handle" value={creator.handle} />
                     <input type="hidden" name="index" value={i} />
                     <input style={pin} name="platform" defaultValue={s.platform} />
                     <input style={uin} name="url" defaultValue={s.url} />
                     <SaveButton label="Save" variant="ghost" />
-                  </form>
-                  <form action={moveSocial}>
+                  </ActionForm>
+                  <ActionForm action={moveSocial}>
                     <input type="hidden" name="handle" value={creator.handle} />
                     <input type="hidden" name="index" value={i} />
                     <input type="hidden" name="direction" value="up" />
-                    <button style={arrow} type="submit">
-                      &uarr;
-                    </button>
-                  </form>
-                  <form action={moveSocial}>
+                    <SaveButton label="&uarr;" variant="ghost" />
+                  </ActionForm>
+                  <ActionForm action={moveSocial}>
                     <input type="hidden" name="handle" value={creator.handle} />
                     <input type="hidden" name="index" value={i} />
                     <input type="hidden" name="direction" value="down" />
-                    <button style={arrow} type="submit">
-                      &darr;
-                    </button>
-                  </form>
-                  <form action={deleteSocial}>
+                    <SaveButton label="&darr;" variant="ghost" />
+                  </ActionForm>
+                  <ActionForm action={deleteSocial}>
                     <input type="hidden" name="handle" value={creator.handle} />
                     <input type="hidden" name="index" value={i} />
                     <SaveButton label="Delete" variant="danger" confirm={"Remove " + s.platform + "?"} />
-                  </form>
+                  </ActionForm>
                 </div>
               ))}
-              <form action={addSocial} style={arow}>
+              <ActionForm action={addSocial} style={arow} resetOnSave>
                 <input type="hidden" name="handle" value={creator.handle} />
                 <input style={pin} name="platform" placeholder="instagram" />
                 <input style={uin} name="url" placeholder="https://instagram.com/ava" />
                 <SaveButton label="Add" variant="ghost" />
-              </form>
+              </ActionForm>
               <p style={hint}>
                 Platform names use Simple Icons slugs: instagram, tiktok, telegram, x, threads, snapchat, reddit, discord,
                 twitch, youtube, and so on.
