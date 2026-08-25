@@ -4,7 +4,10 @@ import { redirect } from "next/navigation"
 import type { CSSProperties, ReactNode } from "react"
 import EmbedShowcase from "./EmbedShowcase"
 import SubscribeForm from "./SubscribeForm"
+import ShareButton from "./ShareButton"
 import Tracker from "./Tracker"
+import { normalizeOrder } from "@/lib/sections"
+import { clampPercent, clampZoom, normalizeSubscribeStyle, normalizeTemplate } from "@/lib/templates"
 
 export const dynamic = "force-dynamic"
 
@@ -37,7 +40,6 @@ const ICON_SIZE: Record<string, string> = { sm: "h-8 w-8", md: "h-9 w-9", lg: "h
 const RADIUS: Record<string, string> = { pill: "9999px", rounded: "16px", square: "4px" }
 const BANNER_H: Record<string, string> = { sm: "h-28", md: "h-40", lg: "h-56" }
 const DOT = " \u2022 "
-const DEFAULT_ORDER = "header,socials,buttons,subscribe,videos,embeds"
 
 function faviconFor(url: string) {
   try {
@@ -46,6 +48,10 @@ function faviconFor(url: string) {
   } catch {
     return ""
   }
+}
+
+function firstUrl(link: LinkRow) {
+  return (link.destinations && link.destinations[0]?.url) || ""
 }
 
 /**
@@ -132,127 +138,140 @@ export default async function CreatorPage({
   const videos = rows.filter((l) => l.type === "video" && !!l.media_url)
   const embeds = rows
     .filter((l) => l.type === "embed")
-    .map((l) => ({ id: l.id, label: l.label, url: (l.destinations && l.destinations[0]?.url) || "" }))
+    .map((l) => ({ id: l.id, label: l.label, url: firstUrl(l) }))
 
-  const initial = (creator.display_name || creator.handle || "?").charAt(0).toUpperCase()
+  const name = String(creator.display_name || creator.handle)
+  const initial = name.charAt(0).toUpperCase()
   const socials = (Array.isArray(creator.socials) ? creator.socials : []) as Social[]
-  const template = String(creator.template || "classic")
-  const isRachel = template === "spotlight"
-  const isCover = template === "cover"
 
+  const template = normalizeTemplate(creator.template)
+  const isSpotlight = template === "spotlight"
+  const isMosaic = template === "mosaic"
+
+  // Spotlight is a flat-colour look, so it ignores uploaded backgrounds entirely.
   const gradient = THEMES[creator.theme as string] || THEMES.noir
-  const bgType = (creator.background_type as string) || "theme"
-  const imageUrl = (creator.bg_image_url as string) || ""
-  const videoUrl = (creator.bg_video_url as string) || ""
-  const bgFit = String(creator.bg_fit || "cover") === "contain" ? "object-contain" : "object-cover"
-  // The spotlight template is deliberately flat black, so it ignores backgrounds.
-  const useImage = !isRachel && bgType === "image" && !!imageUrl
-  const useVideo = !isRachel && bgType === "video" && !!videoUrl
+  const bgType = String(creator.background_type || "theme")
+  const imageUrl = String(creator.bg_image_url || "")
+  const videoUrl = String(creator.bg_video_url || "")
+  const useImage = !isSpotlight && bgType === "image" && !!imageUrl
+  const useVideo = !isSpotlight && bgType === "video" && !!videoUrl
   const useColor = bgType === "color" && !!creator.background_url
+  const flatColor = String(creator.accent_color || "").trim() || "#000000"
 
-  const baseStyle: CSSProperties = isRachel
-    ? { background: "#000000" }
+  const baseStyle: CSSProperties = isSpotlight
+    ? { background: flatColor }
     : useImage || useVideo
       ? { background: "#000000" }
-      : { background: useColor ? (creator.background_url as string) : gradient }
+      : { background: useColor ? String(creator.background_url) : gradient }
 
-  const shellWidth = isRachel ? "max-w-[430px]" : "max-w-[520px]"
-  const avatarSize = isRachel ? "h-20 w-20" : "h-24 w-24"
-  const iconShape = isRachel || isCover ? "rounded-full" : "rounded-md"
+  // Focal point and zoom decide which part of a tall photo stays on screen, so a
+  // portrait shot is no longer cropped to the middle of the frame by accident.
+  const fitClass = String(creator.bg_fit || "cover") === "contain" ? "object-contain" : "object-cover"
+  const zoom = clampZoom(creator.bg_zoom)
+  const mediaStyle: CSSProperties = {
+    objectPosition: clampPercent(creator.bg_pos_x, 50) + "% " + clampPercent(creator.bg_pos_y, 50) + "%",
+    transform: zoom === 100 ? undefined : "scale(" + zoom / 100 + ")",
+  }
 
-  const headerBlock = (
+  const shellWidth = isSpotlight ? "max-w-[430px]" : isMosaic ? "max-w-[560px]" : "max-w-[520px]"
+
+  const badge = creator.show_active_badge ? (
+    <div className="mt-3 flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-300">
+      <span className="h-2 w-2 rounded-full bg-emerald-400" />
+      {creator.active_text || "Active now"}
+    </div>
+  ) : null
+
+  const avatar = (size: string, radius: string) =>
+    creator.photo_url ? (
+      <img src={String(creator.photo_url)} alt={name} className={size + " " + radius + " object-cover ring-2 ring-white/15"} />
+    ) : (
+      <div
+        className={
+          size + " " + radius + " flex items-center justify-center bg-white/10 text-3xl font-semibold ring-2 ring-white/15"
+        }
+      >
+        {initial}
+      </div>
+    )
+
+  const classicHeader = (
     <div className="flex w-full flex-col items-center">
-      {creator.photo_url ? (
-        <img
-          src={creator.photo_url as string}
-          alt={(creator.display_name as string) || (creator.handle as string)}
-          className={avatarSize + " rounded-full object-cover ring-2 ring-white/15"}
-        />
-      ) : (
-        <div
-          className={
-            avatarSize +
-            " flex items-center justify-center rounded-full bg-white/10 text-3xl font-semibold ring-2 ring-white/15"
-          }
-        >
-          {initial}
-        </div>
-      )}
-
-      <h1 className={(isRachel ? "mt-3 text-xl" : "mt-4 text-2xl") + " font-bold"}>
-        {creator.display_name || creator.handle}
-      </h1>
-
+      {avatar("h-24 w-24", "rounded-full")}
+      <h1 className="mt-4 text-2xl font-bold">{name}</h1>
       {creator.location || creator.tagline ? (
         <p className="mt-1 text-center text-sm text-white/60">
           {[creator.location, creator.tagline].filter(Boolean).join(DOT)}
         </p>
       ) : null}
-
-      {creator.show_active_badge ? (
-        <div className="mt-3 flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-300">
-          <span className="h-2 w-2 rounded-full bg-emerald-400" />
-          {creator.active_text || "Active now"}
-        </div>
-      ) : null}
-
-      {creator.bio ? (
-        <p className="mt-4 text-center text-[15px] leading-relaxed text-white/80">{creator.bio}</p>
-      ) : null}
+      {badge}
+      {creator.bio ? <p className="mt-4 text-center text-[15px] leading-relaxed text-white/80">{creator.bio}</p> : null}
     </div>
   )
 
-  const coverBlock = (
-    <div className="relative w-full overflow-hidden rounded-3xl border border-white/10">
-      {creator.photo_url ? (
-        <img src={creator.photo_url as string} alt="" className="h-60 w-full object-cover" />
-      ) : (
-        <div className="flex h-60 w-full items-center justify-center bg-white/10 text-5xl font-semibold">{initial}</div>
-      )}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/25 to-transparent" />
-      <div className="absolute inset-x-0 bottom-0 p-5">
-        <h1 className="text-2xl font-bold">{creator.display_name || creator.handle}</h1>
-        {creator.location || creator.tagline ? (
-          <p className="mt-1 text-sm text-white/70">
-            {[creator.location, creator.tagline].filter(Boolean).join(DOT)}
-          </p>
-        ) : null}
-        {creator.show_active_badge ? (
-          <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-emerald-400/15 px-3 py-1 text-xs text-emerald-300">
-            <span className="h-2 w-2 rounded-full bg-emerald-400" />
-            {creator.active_text || "Active now"}
-          </div>
-        ) : null}
-        {creator.bio ? <p className="mt-3 text-sm leading-relaxed text-white/80">{creator.bio}</p> : null}
+  const spotlightHeader = (
+    <div className="flex w-full flex-col items-center">
+      {avatar("h-24 w-24", "rounded-full")}
+      <h1 className="mt-3 text-xl font-bold">{name}</h1>
+      {creator.location ? (
+        <p className="mt-1 text-[13px] font-semibold text-white/75">&#9906; {String(creator.location)}</p>
+      ) : null}
+      {creator.tagline ? <p className="mt-1 text-[13px] font-bold text-white">{String(creator.tagline)}</p> : null}
+      {badge}
+      {creator.bio ? <p className="mt-3 text-center text-sm leading-relaxed text-white/70">{creator.bio}</p> : null}
+    </div>
+  )
+
+  const mosaicHeader = (
+    <div className="w-full">
+      <div className="flex items-center gap-4">
+        {avatar("h-20 w-20", "rounded-2xl")}
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-2xl font-bold">{name}</h1>
+          {creator.tagline ? <p className="mt-0.5 text-sm text-white/70">{String(creator.tagline)}</p> : null}
+          {creator.location ? <p className="mt-0.5 text-xs text-white/45">{String(creator.location)}</p> : null}
+          {badge}
+        </div>
       </div>
+      {creator.bio ? <p className="mt-4 text-[15px] leading-relaxed text-white/80">{creator.bio}</p> : null}
     </div>
   )
 
   const socialsBlock =
     socials.length > 0 ? (
-      <div className="mt-5 flex w-full flex-wrap items-center justify-center gap-3">
-        {socials.map((s, i) => (
-          <a
-            key={i}
-            href={s.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 hover:bg-white/10"
-          >
-            <img src={"https://cdn.simpleicons.org/" + s.platform + "/white"} alt={s.platform} className="h-5 w-5" />
-          </a>
-        ))}
-      </div>
+      isSpotlight ? (
+        <div className="mt-4 flex w-full flex-wrap items-center justify-center gap-5">
+          {socials.map((s, i) => (
+            <a key={i} href={s.url} target="_blank" rel="noopener noreferrer" className="opacity-90 transition hover:opacity-100">
+              <img src={"https://cdn.simpleicons.org/" + s.platform + "/white"} alt={s.platform} className="h-6 w-6" />
+            </a>
+          ))}
+        </div>
+      ) : (
+        <div className={(isMosaic ? "mt-5 justify-start" : "mt-5 justify-center") + " flex w-full flex-wrap items-center gap-3"}>
+          {socials.map((s, i) => (
+            <a
+              key={i}
+              href={s.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 transition hover:bg-white/10"
+            >
+              <img src={"https://cdn.simpleicons.org/" + s.platform + "/white"} alt={s.platform} className="h-5 w-5" />
+            </a>
+          ))}
+        </div>
+      )
     ) : null
 
-  const buttonsBlock = (
+  const classicButtons = (
     <div className="mt-6 flex w-full flex-col gap-3">
       {buttons.map((link) => {
         const size = link.size || "md"
         const pad = BTN_PAD[size] || BTN_PAD.md
         const txt = BTN_TEXT[size] || BTN_TEXT.md
         const radius = RADIUS[link.shape || "pill"] || RADIUS.pill
-        const icon = link.icon || faviconFor((link.destinations && link.destinations[0]?.url) || "")
+        const icon = link.icon || faviconFor(firstUrl(link))
         const preview = link.preview_image_url || ""
         const ink = labelColor(link.color)
 
@@ -266,7 +285,7 @@ export default async function CreatorPage({
             <a
               key={link.id}
               href={"/go/" + link.id}
-              className="block overflow-hidden border border-white/10 transition hover:brightness-110"
+              className="block overflow-hidden border border-white/10 transition hover:brightness-110 active:scale-[0.99]"
               style={cardStyle}
             >
               <img src={preview} alt="" className={"w-full " + bh + " object-cover"} />
@@ -295,11 +314,15 @@ export default async function CreatorPage({
             key={link.id}
             href={"/go/" + link.id}
             className={
-              "flex items-center gap-3 border border-white/10 " + pad + " " + txt + " font-medium transition hover:brightness-110"
+              "flex items-center gap-3 border border-white/10 " +
+              pad +
+              " " +
+              txt +
+              " font-medium transition hover:brightness-110 active:scale-[0.99]"
             }
             style={btnStyle}
           >
-            {icon ? <img src={icon} alt="" className={ICON_SIZE[size] + " " + iconShape + " object-cover"} /> : null}
+            {icon ? <img src={icon} alt="" className={ICON_SIZE[size] + " rounded-md object-cover"} /> : null}
             <span className="flex-1 text-left">
               <span className="block">{link.label}</span>
               {link.subtitle ? (
@@ -315,12 +338,72 @@ export default async function CreatorPage({
     </div>
   )
 
+  // Spotlight: transparent pill, thin border, centred bold label, round thumbnail
+  // pinned on the left, exactly like the reference page.
+  const spotlightButtons = (
+    <div className="mt-6 flex w-full flex-col gap-4">
+      {buttons.map((link) => {
+        const thumb = link.icon || link.preview_image_url || faviconFor(firstUrl(link))
+        const edgeStyle: CSSProperties = {
+          borderColor: link.color || "rgba(255,255,255,0.9)",
+          borderRadius: "9999px",
+        }
+        return (
+          <a
+            key={link.id}
+            href={"/go/" + link.id}
+            className="relative flex h-16 items-center justify-center border px-16 text-center text-[15px] font-semibold text-white transition hover:bg-white/10 active:scale-[0.99]"
+            style={edgeStyle}
+          >
+            {thumb ? <img src={thumb} alt="" className="absolute left-2.5 h-11 w-11 rounded-full object-cover" /> : null}
+            <span className="flex flex-col">
+              <span>{link.label}</span>
+              {link.subtitle ? <span className="text-xs font-normal text-white/60">{link.subtitle}</span> : null}
+            </span>
+          </a>
+        )
+      })}
+      {buttons.length === 0 ? <p className="text-center text-sm text-white/40">No links yet.</p> : null}
+    </div>
+  )
+
+  // Mosaic: two columns of picture tiles. A link with a preview image gets a
+  // wide tile, everything else gets a square one.
+  const mosaicButtons = (
+    <div className="mt-6 grid w-full grid-cols-2 gap-3">
+      {buttons.map((link) => {
+        const art = link.preview_image_url || link.icon || ""
+        const wide = !!link.preview_image_url
+        const tileStyle: CSSProperties = { background: link.color || "rgba(255,255,255,0.07)" }
+        return (
+          <a
+            key={link.id}
+            href={"/go/" + link.id}
+            className={
+              (wide ? "col-span-2 h-40 " : "col-span-1 h-32 ") +
+              "relative flex flex-col justify-end overflow-hidden rounded-2xl border border-white/10 p-3 transition hover:brightness-110 active:scale-[0.99]"
+            }
+            style={tileStyle}
+          >
+            {art ? <img src={art} alt="" className="absolute inset-0 h-full w-full object-cover opacity-80" /> : null}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent" />
+            <div className="relative">
+              <span className="block text-sm font-semibold text-white">{link.label}</span>
+              {link.subtitle ? <span className="block text-xs text-white/70">{link.subtitle}</span> : null}
+            </div>
+          </a>
+        )
+      })}
+      {buttons.length === 0 ? <p className="col-span-2 text-center text-sm text-white/40">No links yet.</p> : null}
+    </div>
+  )
+
   const videosBlock =
     videos.length > 0 ? (
       <div className="mt-6 flex w-full flex-col gap-4">
         {videos.map((v) => {
           const media = v.media_url || ""
-          const tap = (v.destinations && v.destinations[0]?.url) || ""
+          const tap = firstUrl(v)
           const videoEl = (
             <video src={media} autoPlay muted loop playsInline controls={!tap} className="h-full w-full object-cover" />
           )
@@ -348,58 +431,52 @@ export default async function CreatorPage({
 
   const subscribeBlock = creator.show_subscribe ? (
     <SubscribeForm
-      handle={creator.handle as string}
-      title={(creator.subscribe_title as string) || "Get notified"}
-      note={(creator.subscribe_note as string) || ""}
+      handle={String(creator.handle)}
+      title={String(creator.subscribe_title || "Get notified")}
+      note={String(creator.subscribe_note || "")}
+      style={normalizeSubscribeStyle(creator.subscribe_style)}
+      buttonText={String(creator.subscribe_button_text || "")}
+      askName={!!creator.subscribe_ask_name}
+      avatar={String(creator.photo_url || "")}
     />
   ) : null
 
-  const embedsBlock = (
-    <EmbedShowcase
-      embeds={embeds}
-      layout={String(creator.embed_template || creator.embed_layout || "stack")}
-    />
-  )
+  const embedsBlock = <EmbedShowcase embeds={embeds} layout={String(creator.embed_template || creator.embed_layout || "stack")} />
 
   const sections: Record<string, ReactNode> = {
-    header: isCover ? coverBlock : headerBlock,
+    header: isSpotlight ? spotlightHeader : isMosaic ? mosaicHeader : classicHeader,
     socials: socialsBlock,
-    buttons: buttonsBlock,
+    buttons: isSpotlight ? spotlightButtons : isMosaic ? mosaicButtons : classicButtons,
     subscribe: subscribeBlock,
     videos: videosBlock,
     embeds: embedsBlock,
   }
 
-  const requested = String(creator.section_order || DEFAULT_ORDER)
-    .split(",")
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0 && part in sections)
-
-  // Anything the saved order forgot still renders, so a section can never vanish.
-  const order = requested.slice()
-  Object.keys(sections).forEach((key) => {
-    if (!order.includes(key)) order.push(key)
-  })
+  const order = normalizeOrder(creator.section_order)
 
   return (
     <main className="relative min-h-screen w-full text-white" style={baseStyle}>
       {useImage ? (
-        <div className="fixed inset-0" style={{ zIndex: 0 }}>
-          <img src={imageUrl} alt="" className={"h-full w-full " + bgFit} />
+        <div className="fixed inset-0 overflow-hidden" style={{ zIndex: 0 }}>
+          <img src={imageUrl} alt="" className={"h-full w-full " + fitClass} style={mediaStyle} />
         </div>
       ) : null}
       {useVideo ? (
-        <video
-          src={videoUrl}
-          autoPlay
-          muted
-          loop
-          playsInline
-          className={"fixed inset-0 h-full w-full " + bgFit}
-          style={{ zIndex: 0 }}
-        />
+        <div className="fixed inset-0 overflow-hidden" style={{ zIndex: 0 }}>
+          <video
+            src={videoUrl}
+            autoPlay
+            muted
+            loop
+            playsInline
+            className={"h-full w-full " + fitClass}
+            style={mediaStyle}
+          />
+        </div>
       ) : null}
       {useVideo || useImage ? <div className="fixed inset-0 bg-black/45" style={{ zIndex: 1 }} /> : null}
+
+      {creator.share_button === false ? null : <ShareButton name={name} />}
 
       <div className={"relative z-10 mx-auto flex w-full " + shellWidth + " flex-col items-center px-5 py-12"}>
         {order.map((key) =>
