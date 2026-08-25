@@ -1,4 +1,4 @@
-export type TemplateId = "classic" | "spotlight" | "mosaic"
+export type TemplateId = "classic" | "spotlight" | "mosaic" | "glass"
 
 export type TemplateInfo = {
   id: TemplateId
@@ -32,11 +32,19 @@ export const TEMPLATES: TemplateInfo[] = [
     usesBackground: true,
     usesFlatColor: false,
   },
+  {
+    id: "glass",
+    name: "Glass sheet",
+    blurb: "Full-screen photo with a frosted glass card floating over it holding your name, links and embeds.",
+    usesBackground: true,
+    usesFlatColor: false,
+  },
 ]
 
 export function normalizeTemplate(raw: unknown): TemplateId {
   const value = String(raw || "").toLowerCase()
   if (value === "spotlight") return "spotlight"
+  if (value === "glass") return "glass"
   // "cover" was the old name for this look, so old rows keep working.
   if (value === "mosaic" || value === "cover") return "mosaic"
   return "classic"
@@ -68,7 +76,7 @@ export function clampPercent(raw: unknown, fallback: number): number {
   return Math.min(100, Math.max(0, Math.round(n)))
 }
 
-/** Background zoom is a percentage; 100 means untouched. */
+/** Zoom is a percentage; 100 means untouched. */
 export function clampZoom(raw: unknown): number {
   const n = Number(raw)
   if (!Number.isFinite(n)) return 100

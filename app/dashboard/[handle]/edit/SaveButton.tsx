@@ -1,31 +1,25 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useContext } from "react"
 import type { CSSProperties } from "react"
 import { useFormStatus } from "react-dom"
+import { FormPhaseContext } from "./ActionForm"
 
 type Variant = "primary" | "ghost" | "danger"
 
 const base: CSSProperties = {
-  border: "none",
+  border: "1px solid transparent",
   borderRadius: 8,
   fontWeight: 600,
   cursor: "pointer",
-  transition: "filter .15s, transform .1s",
+  transition: "filter .15s, transform .1s, background .15s, border-color .15s",
 }
 const styles: Record<Variant, CSSProperties> = {
   primary: { ...base, padding: "9px 14px", background: "#5b7fff", color: "#fff", marginTop: 10 },
   ghost: { ...base, padding: "6px 10px", background: "#232940", color: "#cdd6f4", fontWeight: 500 },
   danger: { ...base, padding: "6px 10px", background: "#232940", color: "#ff8080", fontWeight: 500 },
 }
-const savedStyle: CSSProperties = { background: "#166534", color: "#d1fae5" }
-const pendingStyle: CSSProperties = { opacity: 0.65, cursor: "progress" }
 
-/**
- * Every form in the editor used to submit silently, so there was no way to tell
- * a successful save from a mis-tap. This button reports its own state: it goes
- * to "Saving..." while the server action runs, then flashes "Saved".
- */
 export default function SaveButton({
   label,
   variant = "primary",
@@ -35,24 +29,22 @@ export default function SaveButton({
   variant?: Variant
   confirm?: string
 }) {
-  const { pending } = useFormStatus()
-  const [saved, setSaved] = useState(false)
-  const wasPending = useRef(false)
+  const phase = useContext(FormPhaseContext)
+  const native = useFormStatus()
+  const pending = phase.pending || native.pending
 
-  useEffect(() => {
-    if (wasPending.current && !pending) {
-      wasPending.current = pending
-      setSaved(true)
-      const timer = window.setTimeout(() => setSaved(false), 2500)
-      return () => window.clearTimeout(timer)
-    }
-    wasPending.current = pending
-  }, [pending])
+  let text = label
+  let extra: CSSProperties = {}
 
-  const style: CSSProperties = {
-    ...styles[variant],
-    ...(pending ? pendingStyle : null),
-    ...(saved && !pending ? savedStyle : null),
+  if (pending) {
+    text = "Saving..."
+    extra = { opacity: 0.65, cursor: "progress" }
+  } else if (phase.dirty) {
+    text = label + " \u2022 unsaved"
+    extra = { background: "#5b7fff", color: "#fff", borderColor: "#9ab0ff" }
+  } else if (phase.saved) {
+    text = "Saved \u2713"
+    extra = { background: "#166534", color: "#d1fae5" }
   }
 
   return (
@@ -60,12 +52,12 @@ export default function SaveButton({
       type="submit"
       disabled={pending}
       aria-busy={pending}
-      style={style}
+      style={{ ...styles[variant], ...extra }}
       onClick={(event) => {
         if (confirm && !window.confirm(confirm)) event.preventDefault()
       }}
     >
-      {pending ? "Saving..." : saved ? "Saved \u2713" : label}
+      {text}
     </button>
   )
 }
