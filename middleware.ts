@@ -5,22 +5,11 @@ export const config = {
 }
 
 export function middleware(req: NextRequest) {
-  const auth = req.headers.get("authorization")
-  const expectedUser = process.env.DASHBOARD_USER || "admin"
-  const expectedPass = process.env.DASHBOARD_PASSWORD || ""
+  const session = req.cookies.get("landr_session")
+  if (session && session.value.length > 0) return NextResponse.next()
 
-  if (auth && auth.startsWith("Basic ")) {
-    const decoded = atob(auth.slice(6))
-    const sep = decoded.indexOf(":")
-    const user = decoded.slice(0, sep)
-    const pass = decoded.slice(sep + 1)
-    if (expectedPass.length > 0 && user === expectedUser && pass === expectedPass) {
-      return NextResponse.next()
-    }
-  }
-
-  return new NextResponse("Authentication required.", {
-    status: 401,
-    headers: { "WWW-Authenticate": "Basic realm=LandR" },
-  })
+  const url = req.nextUrl.clone()
+  url.pathname = "/signin"
+  url.search = "next=" + encodeURIComponent(req.nextUrl.pathname)
+  return NextResponse.redirect(url)
 }

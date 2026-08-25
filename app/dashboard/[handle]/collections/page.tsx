@@ -1,61 +1,49 @@
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
+import type { CSSProperties } from "react"
+import CollectionsUI from "./CollectionsUI"
+import type { CollectionRow, PageRow } from "./CollectionsUI"
 
 export const dynamic = "force-dynamic"
 
-// Collections group several creator pages under one label so a single operator
-// can filter analytics across them. There is no `collections` table yet, so
-// this lists the pages that exist and states plainly what is missing rather
-// than pretending to save something.
-export default async function CollectionsPage() {
-  const { data } = await supabaseAdmin
-    .from("creators")
-    .select("handle, display_name")
-    .order("created_at", { ascending: true })
-    .limit(200)
+const wrap: CSSProperties = { maxWidth: 900 }
+const head: CSSProperties = { marginBottom: 20 }
+const title: CSSProperties = { fontSize: 20, fontWeight: 700 }
+const sub: CSSProperties = { color: "#8892a4", fontSize: 13, marginTop: 4 }
 
-  const rows = (data || []) as unknown as Array<{ handle: string; display_name: string | null }>
+export default async function CollectionsPage({ params }: { params: Promise<{ handle: string }> }) {
+  const { handle } = await params
+
+  const { data: collections } = await supabaseAdmin
+    .from("collections")
+    .select("id, name, redirect_url")
+    .order("created_at", { ascending: true })
+
+  const { data: creators } = await supabaseAdmin
+    .from("creators")
+    .select("id, handle, display_name, collection_id")
+    .order("created_at", { ascending: true })
+
+  const pages: PageRow[] = (creators || []).map((c: Record<string, unknown>) => ({
+    id: String(c.id),
+    handle: String(c.handle || ""),
+    displayName: String(c.display_name || c.handle || "Untitled"),
+    collectionId: c.collection_id ? String(c.collection_id) : "",
+  }))
+
+  const rows: CollectionRow[] = (collections || []).map((c: Record<string, unknown>) => ({
+    id: String(c.id),
+    name: String(c.name || ""),
+    redirectUrl: c.redirect_url ? String(c.redirect_url) : "",
+    pageCount: pages.filter((p) => p.collectionId === String(c.id)).length,
+  }))
 
   return (
-    <div>
-      <div className="page-header">
-        <div className="page-title">Collections</div>
-        <div className="page-sub">Group pages together so analytics can be filtered across them.</div>
+    <div style={wrap}>
+      <div style={head}>
+        <div style={title}>Collections</div>
+        <div style={sub}>Group your pages, then reuse one redirect for every page in the group</div>
       </div>
-
-      <div className="collections-header">
-        <div className="page-sub">
-          {rows.length} page{rows.length === 1 ? "" : "s"} available to group
-        </div>
-      </div>
-
-      <div className="breakdown-card">
-        <table className="users-table">
-          <thead>
-            <tr>
-              <th>Page</th>
-              <th>Handle</th>
-              <th>Collection</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.handle}>
-                <td>{r.display_name || r.handle}</td>
-                <td>/{r.handle}</td>
-                <td>
-                  <span className="badge">Ungrouped</span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="empty-state">
-        Creating collections needs a `collections` table and a column on `creators` to point at it.
-        <br />
-        Nothing here saves yet, so the button is deliberately absent.
-      </div>
+      <CollectionsUI handle={handle} collections={rows} pages={pages} />
     </div>
   )
 }
