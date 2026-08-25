@@ -7,6 +7,7 @@ import SubscribeForm from "./SubscribeForm"
 import ShareButton from "./ShareButton"
 import Tracker from "./Tracker"
 import { normalizeOrder } from "@/lib/sections"
+import { likeSafeHandle } from "@/lib/handles"
 import { clampPercent, clampZoom, normalizeSubscribeStyle, normalizeTemplate } from "@/lib/templates"
 
 export const dynamic = "force-dynamic"
@@ -82,11 +83,14 @@ export default async function CreatorPage({
   const query = searchParams ? await searchParams : {}
   const isPreview = query.preview === "1"
 
+  // Phone keyboards capitalise the first letter in the address bar, so /Ava was
+  // arriving as a handle that did not exist. Matching without case fixes it.
   const { data: creator, error: creatorError } = await supabaseAdmin
     .from("creators")
     .select("*")
-    .eq("handle", handle)
-    .single()
+    .ilike("handle", likeSafeHandle(handle))
+    .limit(1)
+    .maybeSingle()
 
   if (creatorError && creatorError.code !== "PGRST116") {
     return (
@@ -105,6 +109,7 @@ export default async function CreatorPage({
     )
   }
 
+  const realHandle = String(creator.handle)
   let viewId: string | null = null
 
   if (!isPreview) {
@@ -123,7 +128,8 @@ export default async function CreatorPage({
       )
     }
 
-    viewId = await logPageView(creator.id, "/" + handle)
+    // Logged against the real handle, so /Ava and /ava are one page in analytics.
+    viewId = await logPageView(creator.id, "/" + realHandle)
   }
 
   const { data: links } = await supabaseAdmin
@@ -147,6 +153,7 @@ export default async function CreatorPage({
   const template = normalizeTemplate(creator.template)
   const isSpotlight = template === "spotlight"
   const isMosaic = template === "mosaic"
+  const isGlass = template === "glass"
 
   // Spotlight is a flat-colour look, so it ignores uploaded backgrounds entirely.
   const gradient = THEMES[creator.theme as string] || THEMES.noir
@@ -173,7 +180,21 @@ export default async function CreatorPage({
     transform: zoom === 100 ? undefined : "scale(" + zoom / 100 + ")",
   }
 
-  const shellWidth = isSpotlight ? "max-w-[430px]" : isMosaic ? "max-w-[560px]" : "max-w-[520px]"
+  // The profile photo has its own framing, so an Instagram portrait can be
+  // centred on the face instead of the middle of the picture.
+  const photoZoom = clampZoom(creator.photo_zoom)
+  const photoStyle: CSSProperties = {
+    objectPosition: clampPercent(creator.photo_pos_x, 50) + "% " + clampPercent(creator.photo_pos_y, 50) + "%",
+    transform: photoZoom === 100 ? undefined : "scale(" + photoZoom / 100 + ")",
+  }
+
+  const shellWidth = isSpotlight
+    ? "max-w-[430px]"
+    : isMosaic
+      ? "max-w-[560px]"
+      : isGlass
+        ? "max-w-[480px]"
+        : "max-w-[520px]"
 
   const badge = creator.show_active_badge ? (
     <div className="mt-3 flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-300">
@@ -184,7 +205,9 @@ export default async function CreatorPage({
 
   const avatar = (size: string, radius: string) =>
     creator.photo_url ? (
-      <img src={String(creator.photo_url)} alt={name} className={size + " " + radius + " object-cover ring-2 ring-white/15"} />
+      <div className={size + " " + radius + " overflow-hidden ring-2 ring-white/15"}>
+        <img src={String(creator.photo_url)} alt={name} className="h-full w-full object-cover" style={photoStyle} />
+      </div>
     ) : (
       <div
         className={
@@ -234,6 +257,17 @@ export default async function CreatorPage({
         </div>
       </div>
       {creator.bio ? <p className="mt-4 text-[15px] leading-relaxed text-white/80">{creator.bio}</p> : null}
+    </div>
+  )
+
+  const glassHeader = (
+    <div className="flex w-full flex-col items-center">
+      {avatar("h-20 w-20", "rounded-full")}
+      <h1 className="mt-3 text-xl font-bold">{name}</h1>
+      {creator.tagline ? <p className="mt-1 text-center text-sm text-white/80">{String(creator.tagline)}</p> : null}
+      {creator.location ? <p className="mt-0.5 text-xs text-white/55">{String(creator.location)}</p> : null}
+      {badge}
+      {creator.bio ? <p className="mt-3 text-center text-sm leading-relaxed text-white/75">{creator.bio}</p> : null}
     </div>
   )
 
@@ -398,6 +432,39 @@ export default async function CreatorPage({
     </div>
   )
 
+  // Glass: frosted rows inside the frosted card, thumbnail on the left.
+  const glassButtons = (
+    <div className="mt-5 flex w-full flex-col gap-2.5">
+      {buttons.map((link) => {
+        const icon = link.icon || link.preview_image_url || faviconFor(firstUrl(link))
+        const ink = link.color ? labelColor(link.color) : "#ffffff"
+        const rowStyle: CSSProperties = link.color
+          ? { background: link.color, color: ink }
+          : { background: "rgba(255,255,255,0.14)", color: "#ffffff" }
+        return (
+          <a
+            key={link.id}
+            href={"/go/" + link.id}
+            className="flex items-center gap-3 rounded-2xl border border-white/20 px-3 py-3 text-[15px] font-semibold transition hover:brightness-110 active:scale-[0.99]"
+            style={rowStyle}
+          >
+            {icon ? <img src={icon} alt="" className="h-9 w-9 rounded-xl object-cover" /> : null}
+            <span className="flex-1 text-left">
+              <span className="block">{link.label}</span>
+              {link.subtitle ? (
+                <span className="block text-xs font-normal" style={{ opacity: 0.72 }}>
+                  {link.subtitle}
+                </span>
+              ) : null}
+            </span>
+            <span style={{ opacity: 0.55 }}>&rarr;</span>
+          </a>
+        )
+      })}
+      {buttons.length === 0 ? <p className="text-center text-sm text-white/40">No links yet.</p> : null}
+    </div>
+  )
+
   const videosBlock =
     videos.length > 0 ? (
       <div className="mt-6 flex w-full flex-col gap-4">
@@ -431,7 +498,7 @@ export default async function CreatorPage({
 
   const subscribeBlock = creator.show_subscribe ? (
     <SubscribeForm
-      handle={String(creator.handle)}
+      handle={realHandle}
       title={String(creator.subscribe_title || "Get notified")}
       note={String(creator.subscribe_note || "")}
       style={normalizeSubscribeStyle(creator.subscribe_style)}
@@ -444,15 +511,23 @@ export default async function CreatorPage({
   const embedsBlock = <EmbedShowcase embeds={embeds} layout={String(creator.embed_template || creator.embed_layout || "stack")} />
 
   const sections: Record<string, ReactNode> = {
-    header: isSpotlight ? spotlightHeader : isMosaic ? mosaicHeader : classicHeader,
+    header: isSpotlight ? spotlightHeader : isMosaic ? mosaicHeader : isGlass ? glassHeader : classicHeader,
     socials: socialsBlock,
-    buttons: isSpotlight ? spotlightButtons : isMosaic ? mosaicButtons : classicButtons,
+    buttons: isSpotlight ? spotlightButtons : isMosaic ? mosaicButtons : isGlass ? glassButtons : classicButtons,
     subscribe: subscribeBlock,
     videos: videosBlock,
     embeds: embedsBlock,
   }
 
   const order = normalizeOrder(creator.section_order)
+
+  const body = order.map((key) =>
+    sections[key] ? (
+      <div key={key} className="flex w-full flex-col items-center">
+        {sections[key]}
+      </div>
+    ) : null,
+  )
 
   return (
     <main className="relative min-h-screen w-full text-white" style={baseStyle}>
@@ -474,17 +549,19 @@ export default async function CreatorPage({
           />
         </div>
       ) : null}
-      {useVideo || useImage ? <div className="fixed inset-0 bg-black/45" style={{ zIndex: 1 }} /> : null}
+      {useVideo || useImage ? (
+        <div className={isGlass ? "fixed inset-0 bg-black/25" : "fixed inset-0 bg-black/45"} style={{ zIndex: 1 }} />
+      ) : null}
 
       {creator.share_button === false ? null : <ShareButton name={name} />}
 
       <div className={"relative z-10 mx-auto flex w-full " + shellWidth + " flex-col items-center px-5 py-12"}>
-        {order.map((key) =>
-          sections[key] ? (
-            <div key={key} className="flex w-full flex-col items-center">
-              {sections[key]}
-            </div>
-          ) : null,
+        {isGlass ? (
+          <div className="flex w-full flex-col items-center rounded-3xl border border-white/20 bg-white/10 p-5 shadow-2xl backdrop-blur-xl">
+            {body}
+          </div>
+        ) : (
+          body
         )}
         <p className="mt-10 text-xs text-white/30">powered by LandR</p>
       </div>

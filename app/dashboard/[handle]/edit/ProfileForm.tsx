@@ -2,8 +2,9 @@
 
 import { useState } from "react"
 import type { CSSProperties } from "react"
+import ActionForm from "./ActionForm"
 import SaveButton from "./SaveButton"
-import { SUBSCRIBE_STYLE_LABELS, TEMPLATES, normalizeSubscribeStyle } from "@/lib/templates"
+import { SUBSCRIBE_STYLE_LABELS, TEMPLATES, normalizeSubscribeStyle, templateInfo, normalizeTemplate } from "@/lib/templates"
 
 export type ProfileValues = {
   template: string
@@ -82,19 +83,17 @@ export default function ProfileForm({
   values: ProfileValues
   bgImageUrl: string
 }) {
-  // Uncontrolled inputs were the cause of the "it saved but the field jumped
-  // back" bug: React resets a form after a server action runs, which restored
-  // the values from the render that was already on screen. Holding every value
-  // in state means what you picked is what stays on screen.
+  // Every value lives in state, and ActionForm submits without letting React
+  // reset the form, so what you pick stays picked after a save.
   const [v, setV] = useState<ProfileValues>(values)
   const set = <K extends keyof ProfileValues>(key: K, value: ProfileValues[K]) =>
     setV((prev) => ({ ...prev, [key]: value }))
 
-  const isSpotlight = v.template === "spotlight"
-  const showBackground = !isSpotlight
+  const active = templateInfo(normalizeTemplate(v.template))
+  const isSpotlight = active.id === "spotlight"
+  const showBackground = active.usesBackground
   const usingImage = v.bg_mode === "image"
   const subStyle = normalizeSubscribeStyle(v.subscribe_style)
-  const active = TEMPLATES.find((t) => t.id === v.template) || TEMPLATES[0]
 
   const focalStyle: CSSProperties = {
     width: "100%",
@@ -116,7 +115,7 @@ export default function ProfileForm({
   }
 
   return (
-    <form action={action}>
+    <ActionForm action={action}>
       <input type="hidden" name="handle" value={handle} />
 
       <label style={lbl}>
@@ -401,6 +400,6 @@ export default function ProfileForm({
       </details>
 
       <SaveButton label="Save page" />
-    </form>
+    </ActionForm>
   )
 }
