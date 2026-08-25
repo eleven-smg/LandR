@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin"
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 const BUCKET = "media"
+const IMAGE_EXTS = ["jpg", "jpeg", "png", "webp", "gif", "avif"]
 
 function refresh(handle: string) {
   revalidatePath("/" + handle)
@@ -36,6 +37,44 @@ async function uploadPublic(path: string, file: File) {
   return data.publicUrl + "?v=" + Date.now()
 }
 
+/**
+ * Uploading over the same path replaces the old file, but only when the new file
+ * has the same extension. Switching from jpg to png would otherwise leave the
+ * old image sitting in storage forever, so remove the siblings explicitly.
+ */
+async function dropOtherExtensions(prefix: string, keepExt: string) {
+  const stale = IMAGE_EXTS.filter((e) => e !== keepExt).map((e) => prefix + "." + e)
+  if (stale.length === 0) return
+  await supabaseAdmin.storage.from(BUCKET).remove(stale)
+}
+
+export async function saveAvatar(formData: FormData) {
+  const handle = String(formData.get("handle") || "")
+  const creatorId = String(formData.get("creator_id") || "")
+  const pasted = String(formData.get("photo_url") || "").trim()
+  const file = fileFrom(formData.get("photo_file"))
+
+  if (!handle) return
+
+  let photo = pasted
+  if (file) {
+    const ext = extOf(file.name, "jpg")
+    photo = await uploadPublic(creatorId + "/avatar." + ext, file)
+    if (photo) await dropOtherExtensions(creatorId + "/avatar", ext)
+  }
+  if (!photo) return
+
+  await supabaseAdmin.from("creators").update({ photo_url: photo }).eq("handle", handle)
+  refresh(handle)
+}
+
+export async function removeAvatar(formData: FormData) {
+  const handle = String(formData.get("handle") || "")
+  if (!handle) return
+  await supabaseAdmin.from("creators").update({ photo_url: null }).eq("handle", handle)
+  refresh(handle)
+}
+
 export async function saveIcon(formData: FormData) {
   const handle = String(formData.get("handle") || "")
   const id = String(formData.get("id") || "")
@@ -47,7 +86,9 @@ export async function saveIcon(formData: FormData) {
 
   let icon = pasted
   if (file) {
-    icon = await uploadPublic(creatorId + "/icon-" + id + "." + extOf(file.name, "png"), file)
+    const ext = extOf(file.name, "png")
+    icon = await uploadPublic(creatorId + "/icon-" + id + "." + ext, file)
+    if (icon) await dropOtherExtensions(creatorId + "/icon-" + id, ext)
   }
   if (!icon) return
 

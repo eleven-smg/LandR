@@ -9,10 +9,38 @@ export type SubscribeState = { ok?: boolean; error?: string }
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 const NL = String.fromCharCode(10)
+const IMAGE_EXTS = ["jpg", "jpeg", "png", "webp", "gif", "avif"]
+const VIDEO_EXTS = ["mp4", "webm", "mov", "m4v"]
+
+export const SECTION_KEYS = ["header", "socials", "buttons", "subscribe", "videos", "embeds"]
+export const SECTION_LABELS: Record<string, string> = {
+  header: "Profile photo, name, bio",
+  socials: "Social icon row",
+  buttons: "Link buttons",
+  subscribe: "Email subscribe box",
+  videos: "Uploaded videos",
+  embeds: "Embeds",
+}
 
 function refresh(handle: string) {
   revalidatePath("/" + handle)
   revalidatePath("/dashboard/" + handle + "/edit")
+}
+
+/** Keeps only known sections, in the saved order, then appends anything missing. */
+export function normalizeOrder(raw: unknown): string[] {
+  const parts = String(raw || "")
+    .split(",")
+    .map((p) => p.trim())
+    .filter((p) => SECTION_KEYS.includes(p))
+  const order: string[] = []
+  parts.forEach((p) => {
+    if (!order.includes(p)) order.push(p)
+  })
+  SECTION_KEYS.forEach((k) => {
+    if (!order.includes(k)) order.push(k)
+  })
+  return order
 }
 
 async function readSocials(handle: string): Promise<Social[]> {
@@ -29,9 +57,11 @@ export async function saveProfile(formData: FormData) {
   const active_text = String(formData.get("active_text") || "")
   const show_active_badge = formData.get("show_active_badge") === "on"
   const theme = String(formData.get("theme") || "noir")
+  const template = String(formData.get("template") || "classic")
   const embed_layout = String(formData.get("embed_layout") || "stack")
   const bg_color = String(formData.get("bg_color") || "").trim()
   const bg_mode = String(formData.get("bg_mode") || "theme")
+  const bg_fit = String(formData.get("bg_fit") || "cover")
   const show_subscribe = formData.get("show_subscribe") === "on"
   const subscribe_title = String(formData.get("subscribe_title") || "").trim()
   const subscribe_note = String(formData.get("subscribe_note") || "").trim()
@@ -44,7 +74,11 @@ export async function saveProfile(formData: FormData) {
     active_text,
     show_active_badge,
     theme,
+    template: ["classic", "spotlight", "cover"].includes(template) ? template : "classic",
+    // embed_layout stays in sync so older rows and the new picker agree.
     embed_layout,
+    embed_template: embed_layout,
+    bg_fit: bg_fit === "contain" ? "contain" : "cover",
     show_subscribe,
     subscribe_title: subscribe_title || null,
     subscribe_note: subscribe_note || null,
@@ -68,6 +102,26 @@ export async function saveProfile(formData: FormData) {
   refresh(handle)
 }
 
+export async function moveSection(formData: FormData) {
+  const handle = String(formData.get("handle") || "")
+  const key = String(formData.get("key") || "")
+  const direction = String(formData.get("direction") || "")
+  if (!handle || !SECTION_KEYS.includes(key)) return
+
+  const { data } = await supabaseAdmin.from("creators").select("section_order").eq("handle", handle).single()
+  const order = normalizeOrder(data?.section_order)
+  const index = order.indexOf(key)
+  const swapWith = direction === "up" ? index - 1 : index + 1
+  if (index === -1 || swapWith < 0 || swapWith >= order.length) return
+
+  const tmp = order[index]
+  order[index] = order[swapWith]
+  order[swapWith] = tmp
+
+  await supabaseAdmin.from("creators").update({ section_order: order.join(",") }).eq("handle", handle)
+  refresh(handle)
+}
+
 export async function uploadBackground(formData: FormData) {
   const handle = String(formData.get("handle") || "")
   const creator_id = String(formData.get("creator_id") || "")
@@ -80,7 +134,8 @@ export async function uploadBackground(formData: FormData) {
   if (blob.size > MAX_UPLOAD_BYTES) return
 
   const ext = (blob.name.split(".").pop() || (kind === "video" ? "mp4" : "jpg")).toLowerCase()
-  const path = creator_id + "/bg-" + kind + "." + ext
+  const prefix = creator_id + "/bg-" + kind
+  const path = prefix + "." + ext
 
   const { error } = await supabaseAdmin.storage.from("media").upload(path, blob, {
     contentType: blob.type || (kind === "video" ? "video/mp4" : "image/jpeg"),
@@ -88,10 +143,15 @@ export async function uploadBackground(formData: FormData) {
   })
   if (error) return
 
+  // Replacing a jpg with a png would leave the jpg behind, so clear the siblings.
+  const family = kind === "video" ? VIDEO_EXTS : IMAGE_EXTS
+  const stale = family.filter((e) => e !== ext).map((e) => prefix + "." + e)
+  if (stale.length > 0) await supabaseAdmin.storage.from("media").remove(stale)
+
   const { data: pub } = supabaseAdmin.storage.from("media").getPublicUrl(path)
   const col = kind === "video" ? "bg_video_url" : "bg_image_url"
   const patch: Record<string, unknown> = { background_type: kind }
-  patch[col] = pub.publicUrl
+  patch[col] = pub.publicUrl + "?v=" + Date.now()
   await supabaseAdmin.from("creators").update(patch).eq("handle", handle)
   refresh(handle)
 }
