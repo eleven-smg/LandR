@@ -2,6 +2,7 @@
 
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
 import { revalidatePath } from "next/cache"
+import { SECTION_KEYS, normalizeOrder } from "@/lib/sections"
 
 type Social = { platform: string; url: string }
 
@@ -12,35 +13,9 @@ const NL = String.fromCharCode(10)
 const IMAGE_EXTS = ["jpg", "jpeg", "png", "webp", "gif", "avif"]
 const VIDEO_EXTS = ["mp4", "webm", "mov", "m4v"]
 
-export const SECTION_KEYS = ["header", "socials", "buttons", "subscribe", "videos", "embeds"]
-export const SECTION_LABELS: Record<string, string> = {
-  header: "Profile photo, name, bio",
-  socials: "Social icon row",
-  buttons: "Link buttons",
-  subscribe: "Email subscribe box",
-  videos: "Uploaded videos",
-  embeds: "Embeds",
-}
-
 function refresh(handle: string) {
   revalidatePath("/" + handle)
   revalidatePath("/dashboard/" + handle + "/edit")
-}
-
-/** Keeps only known sections, in the saved order, then appends anything missing. */
-export function normalizeOrder(raw: unknown): string[] {
-  const parts = String(raw || "")
-    .split(",")
-    .map((p) => p.trim())
-    .filter((p) => SECTION_KEYS.includes(p))
-  const order: string[] = []
-  parts.forEach((p) => {
-    if (!order.includes(p)) order.push(p)
-  })
-  SECTION_KEYS.forEach((k) => {
-    if (!order.includes(k)) order.push(k)
-  })
-  return order
 }
 
 async function readSocials(handle: string): Promise<Social[]> {
