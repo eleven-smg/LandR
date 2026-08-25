@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
+import { likeSafeHandle } from "@/lib/handles"
 import Sidebar from "./Sidebar"
 import "./dashboard.css"
 
@@ -14,18 +15,20 @@ export default async function DashboardLayout({
 }) {
   const { handle } = await params
 
+  // Matched without case so /dashboard/Ava works the same as /dashboard/ava.
   const { data: creator } = await supabaseAdmin
     .from("creators")
     .select("handle, display_name, photo_url")
-    .eq("handle", handle)
-    .single()
+    .ilike("handle", likeSafeHandle(handle))
+    .limit(1)
+    .maybeSingle()
 
-  const row = creator as { display_name: string | null; photo_url: string | null } | null
+  const row = creator as { handle: string; display_name: string | null; photo_url: string | null } | null
 
   return (
     <div className="dash-root">
       <Sidebar
-        handle={handle}
+        handle={(row && row.handle) || handle}
         displayName={(row && row.display_name) || handle}
         photoUrl={(row && row.photo_url) || null}
       />

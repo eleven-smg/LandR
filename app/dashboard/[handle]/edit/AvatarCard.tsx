@@ -5,7 +5,7 @@ import type { CSSProperties } from "react"
 import ActionForm from "./ActionForm"
 import SaveButton from "./SaveButton"
 import { saveAvatar, removeAvatar } from "./mediaActions"
-import { saveAvatarFocus } from "./actions"
+import { saveAvatarFocus } from "./orderActions"
 
 const input: CSSProperties = {
   width: "100%",
