@@ -19,6 +19,14 @@ function sourceFromReferrer(referrer: string | null): string {
   }
 }
 
+function firstLanguage(raw: string | null): string | null {
+  if (!raw) return null
+  const first = raw.split(",")[0]
+  if (!first) return null
+  const clean = first.split(";")[0].trim()
+  return clean.length > 0 ? clean.slice(0, 16) : null
+}
+
 export async function getRequestMeta() {
   const h = await headers()
   const ua = h.get("user-agent") || ""
@@ -33,28 +41,42 @@ export async function getRequestMeta() {
     os: parser.getOS().name || null,
     referrer,
     source: sourceFromReferrer(referrer),
+    language: firstLanguage(h.get("accept-language")),
   }
 }
 
-export async function logPageView(creatorId: string, path: string) {
+/**
+ * Records a page view and returns the row id so the browser can enrich it with
+ * visitor id, session id, screen size and time on page. Returns null when the
+ * insert fails, in which case the browser simply skips the follow-up.
+ */
+export async function logPageView(creatorId: string, path: string): Promise<string | null> {
   const m = await getRequestMeta()
-  const { error } = await supabaseAdmin.from("page_views").insert({
-    creator_id: creatorId,
-    path,
-    country: m.country,
-    region: m.region,
-    city: m.city,
-    device: m.device,
-    browser: m.browser,
-    os: m.os,
-    referrer: m.referrer,
-    source: m.source,
-  })
+  const { data, error } = await supabaseAdmin
+    .from("page_views")
+    .insert({
+      creator_id: creatorId,
+      path,
+      country: m.country,
+      region: m.region,
+      city: m.city,
+      device: m.device,
+      browser: m.browser,
+      os: m.os,
+      referrer: m.referrer,
+      source: m.source,
+      language: m.language,
+    })
+    .select("id")
+    .single()
+
   // Tracking must never break the page, so log and continue. Watch for 42703
-  // (undefined column), which means sql/schema.sql has not been run.
+  // (undefined column), which means a migration has not been applied.
   if (error) {
     console.error("[analytics] page_view insert failed:", error.code, error.message)
+    return null
   }
+  return data ? String(data.id) : null
 }
 
 export async function logLinkClick(creatorId: string, linkId: string, destinationUrl: string) {
