@@ -3,6 +3,7 @@
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
 import { revalidatePath } from "next/cache"
 import { SECTION_KEYS, normalizeOrder } from "@/lib/sections"
+import { clampPercent, clampZoom, normalizeSubscribeStyle, normalizeTemplate } from "@/lib/templates"
 
 type Social = { platform: string; url: string }
 
@@ -10,8 +11,6 @@ export type SubscribeState = { ok?: boolean; error?: string }
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 const NL = String.fromCharCode(10)
-const IMAGE_EXTS = ["jpg", "jpeg", "png", "webp", "gif", "avif"]
-const VIDEO_EXTS = ["mp4", "webm", "mov", "m4v"]
 
 function refresh(handle: string) {
   revalidatePath("/" + handle)
@@ -23,6 +22,42 @@ async function readSocials(handle: string): Promise<Social[]> {
   return Array.isArray(data?.socials) ? (data.socials as Social[]) : []
 }
 
+/**
+ * Uploading a replacement to a fixed path (bg-image.jpg) meant the public URL
+ * never changed, so browsers and the storage CDN kept serving the old picture:
+ * the "stale background" problem. Every upload now gets its own filename and
+ * the previous files with the same prefix are deleted, so the URL always
+ * changes and nothing piles up in the bucket.
+ */
+async function replaceMedia(
+  creatorId: string,
+  prefix: string,
+  blob: File,
+  fallbackExt: string,
+  fallbackType: string,
+): Promise<string | null> {
+  const ext = (blob.name.split(".").pop() || fallbackExt).toLowerCase().replace(/[^a-z0-9]/g, "")
+  const filename = prefix + "-" + Date.now() + "." + (ext || fallbackExt)
+  const path = creatorId + "/" + filename
+
+  const { error } = await supabaseAdmin.storage.from("media").upload(path, blob, {
+    contentType: blob.type || fallbackType,
+    upsert: true,
+  })
+  if (error) return null
+
+  const { data: existing } = await supabaseAdmin.storage.from("media").list(creatorId)
+  const stale = (existing || [])
+    .map((entry) => entry.name)
+    .filter((entryName) => entryName !== filename)
+    .filter((entryName) => entryName === prefix || entryName.startsWith(prefix + ".") || entryName.startsWith(prefix + "-"))
+    .map((entryName) => creatorId + "/" + entryName)
+  if (stale.length > 0) await supabaseAdmin.storage.from("media").remove(stale)
+
+  const { data: pub } = supabaseAdmin.storage.from("media").getPublicUrl(path)
+  return pub.publicUrl
+}
+
 export async function saveProfile(formData: FormData) {
   const handle = String(formData.get("handle") || "")
   const display_name = String(formData.get("display_name") || "")
@@ -32,14 +67,20 @@ export async function saveProfile(formData: FormData) {
   const active_text = String(formData.get("active_text") || "")
   const show_active_badge = formData.get("show_active_badge") === "on"
   const theme = String(formData.get("theme") || "noir")
-  const template = String(formData.get("template") || "classic")
+  const template = normalizeTemplate(formData.get("template"))
+  const accent_color = String(formData.get("accent_color") || "").trim()
   const embed_layout = String(formData.get("embed_layout") || "stack")
   const bg_color = String(formData.get("bg_color") || "").trim()
   const bg_mode = String(formData.get("bg_mode") || "theme")
   const bg_fit = String(formData.get("bg_fit") || "cover")
   const show_subscribe = formData.get("show_subscribe") === "on"
+  const subscribe_style = normalizeSubscribeStyle(formData.get("subscribe_style"))
   const subscribe_title = String(formData.get("subscribe_title") || "").trim()
   const subscribe_note = String(formData.get("subscribe_note") || "").trim()
+  const subscribe_button_text = String(formData.get("subscribe_button_text") || "").trim()
+  const subscribe_ask_name = formData.get("subscribe_ask_name") === "on"
+  const deep_links = formData.get("deep_links") === "on"
+  const share_button = formData.get("share_button") === "on"
 
   const patch: Record<string, unknown> = {
     display_name,
@@ -49,14 +90,23 @@ export async function saveProfile(formData: FormData) {
     active_text,
     show_active_badge,
     theme,
-    template: ["classic", "spotlight", "cover"].includes(template) ? template : "classic",
+    template,
+    accent_color: accent_color || null,
     // embed_layout stays in sync so older rows and the new picker agree.
     embed_layout,
     embed_template: embed_layout,
     bg_fit: bg_fit === "contain" ? "contain" : "cover",
+    bg_pos_x: clampPercent(formData.get("bg_pos_x"), 50),
+    bg_pos_y: clampPercent(formData.get("bg_pos_y"), 50),
+    bg_zoom: clampZoom(formData.get("bg_zoom")),
     show_subscribe,
+    subscribe_style,
     subscribe_title: subscribe_title || null,
     subscribe_note: subscribe_note || null,
+    subscribe_button_text: subscribe_button_text || null,
+    subscribe_ask_name,
+    deep_links,
+    share_button,
   }
 
   // Only the colour mode touches background_url, so switching to image or video
@@ -108,25 +158,18 @@ export async function uploadBackground(formData: FormData) {
   if (blob.size === 0) return
   if (blob.size > MAX_UPLOAD_BYTES) return
 
-  const ext = (blob.name.split(".").pop() || (kind === "video" ? "mp4" : "jpg")).toLowerCase()
-  const prefix = creator_id + "/bg-" + kind
-  const path = prefix + "." + ext
+  const isVideo = kind === "video"
+  const publicUrl = await replaceMedia(
+    creator_id,
+    isVideo ? "bg-video" : "bg-image",
+    blob,
+    isVideo ? "mp4" : "jpg",
+    isVideo ? "video/mp4" : "image/jpeg",
+  )
+  if (!publicUrl) return
 
-  const { error } = await supabaseAdmin.storage.from("media").upload(path, blob, {
-    contentType: blob.type || (kind === "video" ? "video/mp4" : "image/jpeg"),
-    upsert: true,
-  })
-  if (error) return
-
-  // Replacing a jpg with a png would leave the jpg behind, so clear the siblings.
-  const family = kind === "video" ? VIDEO_EXTS : IMAGE_EXTS
-  const stale = family.filter((e) => e !== ext).map((e) => prefix + "." + e)
-  if (stale.length > 0) await supabaseAdmin.storage.from("media").remove(stale)
-
-  const { data: pub } = supabaseAdmin.storage.from("media").getPublicUrl(path)
-  const col = kind === "video" ? "bg_video_url" : "bg_image_url"
   const patch: Record<string, unknown> = { background_type: kind }
-  patch[col] = pub.publicUrl + "?v=" + Date.now()
+  patch[isVideo ? "bg_video_url" : "bg_image_url"] = publicUrl
   await supabaseAdmin.from("creators").update(patch).eq("handle", handle)
   refresh(handle)
 }
@@ -134,6 +177,7 @@ export async function uploadBackground(formData: FormData) {
 export async function subscribe(_prev: SubscribeState, formData: FormData): Promise<SubscribeState> {
   const handle = String(formData.get("handle") || "")
   const email = String(formData.get("email") || "").trim().toLowerCase()
+  const name = String(formData.get("name") || "").trim()
 
   if (!email || !email.includes("@") || email.length < 5) {
     return { error: "Please enter a valid email." }
@@ -143,7 +187,9 @@ export async function subscribe(_prev: SubscribeState, formData: FormData): Prom
 
   if (!creator) return { error: "Something went wrong. Try again." }
 
-  const { error } = await supabaseAdmin.from("subscribers").insert({ creator_id: creator.id, handle, email })
+  const { error } = await supabaseAdmin
+    .from("subscribers")
+    .insert({ creator_id: creator.id, handle, email, name: name || null })
 
   if (error) {
     // 23505 is a unique violation: the address is already on the list, which is
@@ -167,17 +213,10 @@ export async function uploadVideo(formData: FormData) {
   if (blob.size === 0) return
   if (blob.size > MAX_UPLOAD_BYTES) return
 
-  const ext = (blob.name.split(".").pop() || "mp4").toLowerCase()
-  const path = creator_id + "/" + id + "." + ext
+  const publicUrl = await replaceMedia(creator_id, "clip-" + id, blob, "mp4", "video/mp4")
+  if (!publicUrl) return
 
-  const { error } = await supabaseAdmin.storage.from("media").upload(path, blob, {
-    contentType: blob.type || "video/mp4",
-    upsert: true,
-  })
-  if (error) return
-
-  const { data: pub } = supabaseAdmin.storage.from("media").getPublicUrl(path)
-  await supabaseAdmin.from("links").update({ media_url: pub.publicUrl }).eq("id", id)
+  await supabaseAdmin.from("links").update({ media_url: publicUrl }).eq("id", id)
   refresh(handle)
 }
 
@@ -201,15 +240,9 @@ export async function savePreview(formData: FormData) {
     const blob = file as File
     if (blob.size > 0) {
       if (blob.size > MAX_UPLOAD_BYTES) return
-      const ext = (blob.name.split(".").pop() || "jpg").toLowerCase()
-      const path = creator_id + "/preview-" + id + "." + ext
-      const { error } = await supabaseAdmin.storage.from("media").upload(path, blob, {
-        contentType: blob.type || "image/jpeg",
-        upsert: true,
-      })
-      if (error) return
-      const { data: pub } = supabaseAdmin.storage.from("media").getPublicUrl(path)
-      publicUrl = pub.publicUrl
+      const uploaded = await replaceMedia(creator_id, "preview-" + id, blob, "jpg", "image/jpeg")
+      if (!uploaded) return
+      publicUrl = uploaded
     }
   }
 
