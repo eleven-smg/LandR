@@ -1,4 +1,5 @@
 import Link from "next/link"
+import type { CSSProperties } from "react"
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
 import { likeSafeHandle } from "@/lib/handles"
 import BreakdownCard from "./BreakdownCard"
@@ -26,7 +27,13 @@ type ViewRow = {
 }
 
 type PrevViewRow = { created_at: string; visitor_id: string | null }
-type ClickRow = { created_at: string; destination_url: string | null }
+type ClickRow = {
+  created_at: string
+  destination_url: string | null
+  link_id: string | null
+  session_id: string | null
+}
+type LinkRow = { id: string; label: string | null; url: string | null; is_active: boolean | null }
 
 const RANGES = [
   { key: "day", label: "Day", days: 1 },
@@ -36,6 +43,45 @@ const RANGES = [
 ]
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+const exportRow: CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }
+const exportBtn: CSSProperties = {
+  display: "inline-block",
+  padding: "6px 11px",
+  background: "#232940",
+  border: "1px solid #2d3550",
+  borderRadius: 8,
+  color: "#cdd6f4",
+  fontSize: 12,
+  fontWeight: 500,
+  textDecoration: "none",
+}
+const linkTable: CSSProperties = { marginTop: 4 }
+const linkHead: CSSProperties = {
+  display: "flex",
+  gap: 10,
+  alignItems: "center",
+  color: "#6b7396",
+  fontSize: 11,
+  textTransform: "uppercase",
+  letterSpacing: 0.4,
+  paddingBottom: 8,
+  borderBottom: "1px solid #232940",
+}
+const linkRow: CSSProperties = {
+  display: "flex",
+  gap: 10,
+  alignItems: "center",
+  padding: "9px 0",
+  borderBottom: "1px solid #1c2130",
+  fontSize: 13,
+}
+const linkName: CSSProperties = { flex: 1, minWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }
+const linkOff: CSSProperties = { color: "#6b7396", fontSize: 11, marginLeft: 6 }
+const numCell: CSSProperties = { width: 70, textAlign: "right", fontVariantNumeric: "tabular-nums" }
+const rateCell: CSSProperties = { width: 80, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600 }
+const barWrap: CSSProperties = { width: 110, height: 6, background: "#1c2130", borderRadius: 999, overflow: "hidden" }
+const emptyNote: CSSProperties = { color: "#6b7396", fontSize: 13, padding: "12px 0" }
 
 function fmtDate(d: Date) {
   return d.getUTCDate() + " " + MONTHS[d.getUTCMonth()] + " " + d.getUTCFullYear()
@@ -175,7 +221,7 @@ export default async function AnalyticsPage({
   const since = new Date(now.getTime() - span)
   const prevSince = new Date(now.getTime() - 2 * span)
 
-  const [curRes, prevRes, clickRes, prevClickRes] = await Promise.all([
+  const [curRes, prevRes, clickRes, prevClickRes, linkRes] = await Promise.all([
     supabaseAdmin
       .from("page_views")
       .select(
@@ -194,7 +240,7 @@ export default async function AnalyticsPage({
       .limit(20000),
     supabaseAdmin
       .from("link_clicks")
-      .select("created_at, destination_url")
+      .select("created_at, destination_url, link_id, session_id")
       .eq("creator_id", creator.id)
       .gte("created_at", since.toISOString())
       .limit(20000),
@@ -205,12 +251,18 @@ export default async function AnalyticsPage({
       .gte("created_at", prevSince.toISOString())
       .lt("created_at", since.toISOString())
       .limit(20000),
+    supabaseAdmin
+      .from("links")
+      .select("id, label, url, is_active")
+      .eq("creator_id", creator.id)
+      .order("position", { ascending: true }),
   ])
 
   const views = (curRes.data || []) as unknown as ViewRow[]
   const prevViews = (prevRes.data || []) as unknown as PrevViewRow[]
   const clicks = (clickRes.data || []) as unknown as ClickRow[]
   const prevClicks = (prevClickRes.data || []) as unknown as Array<{ created_at: string }>
+  const links = (linkRes.data || []) as unknown as LinkRow[]
 
   // Single pass per dataset. Filtering once per bucket would be 365 x 20000
   // comparisons on the year range.
@@ -242,10 +294,7 @@ export default async function AnalyticsPage({
   // Rows are already ordered oldest first, so the first path seen in a session
   // is the entry page and the last one is the exit page.
   const visitorIds = new Set<string>()
-  const sessions = new Map<
-    string,
-    { hits: number; seconds: number; entry: string; exit: string }
-  >()
+  const sessions = new Map<string, { hits: number; seconds: number; entry: string; exit: string }>()
 
   for (const r of views) {
     const visitor = String(r.visitor_id || "").trim()
@@ -274,15 +323,21 @@ export default async function AnalyticsPage({
     if (path) found.exit = path
   }
 
-  const sessionList = Array.from(sessions.values())
+  const sessionList = Array.from(sessions.entries()).map(([key, value]) => ({ key, ...value }))
   const sessionCount = sessionList.length
   const uniqueVisitors = visitorIds.size
   const prevUniqueVisitors = new Set(
     prevViews.map((r) => String(r.visitor_id || "").trim()).filter((v) => v.length > 0),
   ).size
 
-  const bounced = sessionList.filter((s) => s.hits <= 1).length
-  const bounceRate = sessionCount > 0 ? Math.round((bounced / sessionCount) * 1000) / 10 : 0
+  // A link-in-bio page is one screen, so "looked at one page and left" counted
+  // almost every visit. What the agency actually wants to know is how many
+  // people arrived and tapped nothing.
+  const clickedSessions = new Set(
+    clicks.map((c) => String(c.session_id || "").trim()).filter((v) => v.length > 0),
+  )
+  const silent = sessionList.filter((s) => !clickedSessions.has(s.key)).length
+  const silentRate = sessionCount > 0 ? Math.round((silent / sessionCount) * 1000) / 10 : 0
 
   const timedSessions = sessionList.filter((s) => s.seconds > 0)
   const avgSeconds =
@@ -306,6 +361,28 @@ export default async function AnalyticsPage({
   ).size
   const active = activeVisitors > 0 ? activeVisitors : recent.length
   const ctr = views.length > 0 ? Math.round((clicks.length / views.length) * 1000) / 10 : 0
+
+  // Clicks per button, so the agency can see which link earns.
+  const clicksByLink = new Map<string, number>()
+  for (const c of clicks) {
+    const id = String(c.link_id || "").trim()
+    if (id) clicksByLink.set(id, (clicksByLink.get(id) || 0) + 1)
+  }
+  const perLink = links
+    .map((l) => {
+      const hits = clicksByLink.get(String(l.id)) || 0
+      return {
+        id: String(l.id),
+        label: String(l.label || "Untitled link"),
+        host: hostOf(l.url),
+        live: l.is_active !== false,
+        clicks: hits,
+        rate: views.length > 0 ? Math.round((hits / views.length) * 1000) / 10 : 0,
+      }
+    })
+    .sort((a, b) => b.clicks - a.clicks)
+  const bestRate = perLink.length > 0 ? Math.max(...perLink.map((l) => l.rate), 1) : 1
+  const untracked = clicks.filter((c) => !String(c.link_id || "").trim()).length
 
   const pages = tally(
     views.map((r) => r.path),
@@ -366,6 +443,7 @@ export default async function AnalyticsPage({
 
   const name = creator.display_name || creator.handle
   const noSessions = sessionCount === 0
+  const exportBase = "/dashboard/" + creator.handle + "/export?range=" + range.key + "&what="
 
   return (
     <div>
@@ -394,6 +472,19 @@ export default async function AnalyticsPage({
         <div className="date-range">
           {fmtDate(since)} &ndash; {fmtDate(now)}
         </div>
+      </div>
+
+      <div style={{ ...exportRow, marginBottom: 18 }}>
+        <span style={{ color: "#6b7396", fontSize: 12 }}>Download this {range.label.toLowerCase()}:</span>
+        <a style={exportBtn} href={exportBase + "views"} download>
+          Views CSV
+        </a>
+        <a style={exportBtn} href={exportBase + "clicks"} download>
+          Clicks CSV
+        </a>
+        <a style={exportBtn} href={exportBase + "links"} download>
+          Per-link CSV
+        </a>
       </div>
 
       <div className="stats-grid">
@@ -428,9 +519,9 @@ export default async function AnalyticsPage({
           <div className="stat-note">Clicks divided by views.</div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">Bounce Rate</div>
-          <div className="stat-value">{noSessions ? "0%" : bounceRate + "%"}</div>
-          <div className="stat-note">Visits that looked at one page and left.</div>
+          <div className="stat-label">Clicked Nothing</div>
+          <div className="stat-value">{noSessions ? "0%" : silentRate + "%"}</div>
+          <div className="stat-note">Visits that clicked nothing: {silent} of {sessionCount}.</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Time On Page</div>
@@ -444,6 +535,49 @@ export default async function AnalyticsPage({
         <div className="chart-wrap">
           <TrafficChart data={series} />
         </div>
+      </div>
+
+      <div className="chart-card">
+        <div className="chart-title">Which link earns</div>
+        {perLink.length === 0 ? (
+          <div style={emptyNote}>No links on this page yet.</div>
+        ) : (
+          <div style={linkTable}>
+            <div style={linkHead}>
+              <span style={linkName}>Link</span>
+              <span style={barWrap} />
+              <span style={numCell}>Clicks</span>
+              <span style={rateCell}>Click rate</span>
+            </div>
+            {perLink.map((l) => (
+              <div key={l.id} style={linkRow}>
+                <span style={linkName}>
+                  {l.label}
+                  {l.host ? <span style={linkOff}>{l.host}</span> : null}
+                  {l.live ? null : <span style={linkOff}>hidden</span>}
+                </span>
+                <span style={barWrap}>
+                  <span
+                    style={{
+                      display: "block",
+                      height: "100%",
+                      width: Math.round((l.rate / bestRate) * 100) + "%",
+                      background: "#5b7fff",
+                    }}
+                  />
+                </span>
+                <span style={numCell}>{l.clicks}</span>
+                <span style={rateCell}>{l.rate}%</span>
+              </div>
+            ))}
+            <div className="stat-note" style={{ marginTop: 10 }}>
+              Click rate is that button&rsquo;s clicks divided by the {views.length} page views in this range.
+              {untracked > 0
+                ? " " + untracked + " older clicks were logged before per-button tracking and are not counted here."
+                : ""}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="breakdown-grid">
