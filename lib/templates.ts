@@ -76,9 +76,15 @@ export function clampPercent(raw: unknown, fallback: number): number {
   return Math.min(100, Math.max(0, Math.round(n)))
 }
 
-/** Zoom is a percentage; 100 means untouched. */
+/**
+ * Zoom is a percentage where 100 means untouched. The floor used to be 100,
+ * which made the slider sit hard against its left edge at the default and look
+ * like it was set to zero, and it also made it impossible to pull back from a
+ * photo that filled the screen too tightly on a wide monitor. Below 100 the
+ * whole picture is pulled into view and the page colour shows around it.
+ */
 export function clampZoom(raw: unknown): number {
   const n = Number(raw)
   if (!Number.isFinite(n)) return 100
-  return Math.min(300, Math.max(100, Math.round(n)))
+  return Math.min(300, Math.max(50, Math.round(n)))
 }

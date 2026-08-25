@@ -58,19 +58,19 @@ const hint: CSSProperties = { color: "#6b7396", fontSize: 11, marginTop: 6 }
 const check: CSSProperties = { fontSize: 12, color: "#9aa4c2", display: "flex", alignItems: "center", gap: 6, marginTop: 8 }
 const blurb: CSSProperties = { color: "#8892a4", fontSize: 12, marginTop: 6, lineHeight: 1.45 }
 const pickWrap: CSSProperties = { display: "flex", gap: 12, marginTop: 10, flexWrap: "wrap" }
-const frame: CSSProperties = {
-  width: 132,
-  height: 232,
-  borderRadius: 14,
-  overflow: "hidden",
-  border: "1px solid #232940",
-  background: "#000",
-  flexShrink: 0,
-  cursor: "crosshair",
-  position: "relative",
-}
 const sliders: CSSProperties = { flex: 1, minWidth: 170 }
 const range: CSSProperties = { width: "100%", marginTop: 2 }
+const shapeRow: CSSProperties = { display: "flex", gap: 6, alignItems: "center", marginTop: 8, flexWrap: "wrap" }
+const chip: CSSProperties = {
+  padding: "4px 9px",
+  borderRadius: 999,
+  border: "1px solid #232940",
+  background: "#0f1117",
+  color: "#8892a4",
+  fontSize: 11,
+  cursor: "pointer",
+}
+const chipOn: CSSProperties = { ...chip, borderColor: "#5b7fff", background: "rgba(91,127,255,0.12)", color: "#cdd6f4" }
 
 export default function ProfileForm({
   action,
@@ -86,6 +86,10 @@ export default function ProfileForm({
   // Every value lives in state, and ActionForm submits without letting React
   // reset the form, so what you pick stays picked after a save.
   const [v, setV] = useState<ProfileValues>(values)
+  // A phone crops a wide photo very differently from a monitor, which is why the
+  // page looked right on the phone and cut off the face on the PC. The preview
+  // can now be switched to the shape of the screen you are checking.
+  const [shape, setShape] = useState<string>("phone")
   const set = <K extends keyof ProfileValues>(key: K, value: ProfileValues[K]) =>
     setV((prev) => ({ ...prev, [key]: value }))
 
@@ -94,6 +98,19 @@ export default function ProfileForm({
   const showBackground = active.usesBackground
   const usingImage = v.bg_mode === "image"
   const subStyle = normalizeSubscribeStyle(v.subscribe_style)
+  const isPhoneShape = shape === "phone"
+
+  const frame: CSSProperties = {
+    width: isPhoneShape ? 132 : 250,
+    height: isPhoneShape ? 232 : 140,
+    borderRadius: 14,
+    overflow: "hidden",
+    border: "1px solid #232940",
+    background: v.bg_color || "#000",
+    flexShrink: 0,
+    cursor: "crosshair",
+    position: "relative",
+  }
 
   const focalStyle: CSSProperties = {
     width: "100%",
@@ -112,6 +129,10 @@ export default function ProfileForm({
       bg_pos_x: Math.min(100, Math.max(0, x)),
       bg_pos_y: Math.min(100, Math.max(0, y)),
     }))
+  }
+
+  function recentre() {
+    setV((prev) => ({ ...prev, bg_pos_x: 50, bg_pos_y: 50, bg_zoom: 100 }))
   }
 
   return (
@@ -237,15 +258,28 @@ export default function ProfileForm({
           {usingImage && bgImageUrl ? (
             <>
               <p style={hint}>
-                Tap the part of the photo you want kept in frame &mdash; your face, for example. Zoom in to crop tighter.
+                Tap the part of the photo you want kept in frame &mdash; your face, for example. Zoom above 100% crops
+                tighter, below 100% pulls back so more of the picture fits.
               </p>
+              <div style={shapeRow}>
+                <span style={{ ...hint, marginTop: 0 }}>Check the crop on:</span>
+                <button type="button" style={isPhoneShape ? chipOn : chip} onClick={() => setShape("phone")}>
+                  Phone
+                </button>
+                <button type="button" style={isPhoneShape ? chip : chipOn} onClick={() => setShape("desktop")}>
+                  Computer
+                </button>
+                <button type="button" style={chip} onClick={recentre}>
+                  Recentre
+                </button>
+              </div>
               <div style={pickWrap}>
                 <div style={frame} onClick={pickFocal} title="Tap the part to keep in frame">
                   <img src={bgImageUrl} alt="" style={focalStyle} />
                 </div>
                 <div style={sliders}>
                   <label style={lbl}>
-                    Left to right: {v.bg_pos_x}%
+                    Left to right: {v.bg_pos_x}% {v.bg_pos_x === 50 ? "(centre)" : ""}
                     <input
                       style={range}
                       type="range"
@@ -257,7 +291,7 @@ export default function ProfileForm({
                     />
                   </label>
                   <label style={lbl}>
-                    Top to bottom: {v.bg_pos_y}%
+                    Top to bottom: {v.bg_pos_y}% {v.bg_pos_y === 50 ? "(centre)" : v.bg_pos_y < 30 ? "(top of photo)" : ""}
                     <input
                       style={range}
                       type="range"
@@ -269,11 +303,12 @@ export default function ProfileForm({
                     />
                   </label>
                   <label style={lbl}>
-                    Zoom: {v.bg_zoom}%
+                    Zoom: {v.bg_zoom}%{" "}
+                    {v.bg_zoom === 100 ? "(no zoom)" : v.bg_zoom < 100 ? "(pulled back)" : "(cropped in)"}
                     <input
                       style={range}
                       type="range"
-                      min={100}
+                      min={50}
                       max={300}
                       step={5}
                       name="bg_zoom"
@@ -281,6 +316,11 @@ export default function ProfileForm({
                       onChange={(e) => set("bg_zoom", Number(e.target.value))}
                     />
                   </label>
+                  <p style={hint}>
+                    On a wide monitor a tall photo has to lose the top or the bottom. Drop &ldquo;Top to bottom&rdquo;
+                    towards 20% to keep the face, or pull the zoom under 100% to fit the whole shot with the page colour
+                    showing around it.
+                  </p>
                 </div>
               </div>
             </>
