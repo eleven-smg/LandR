@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react"
+import Link from "next/link"
 import { signIn } from "./actions"
 
 export const dynamic = "force-dynamic"
@@ -57,6 +58,17 @@ const err: CSSProperties = {
   marginBottom: 14,
 }
 const hint: CSSProperties = { color: "#6b7396", fontSize: 11, marginTop: 14 }
+const footRow: CSSProperties = {
+  marginTop: 16,
+  paddingTop: 14,
+  borderTop: "1px solid #232940",
+  fontSize: 12,
+  color: "#8892a4",
+  display: "flex",
+  gap: 6,
+  flexWrap: "wrap",
+}
+const linkStyle: CSSProperties = { color: "#5b7fff", fontWeight: 600, textDecoration: "none" }
 
 export default async function SignInPage({
   searchParams,
@@ -72,7 +84,7 @@ export default async function SignInPage({
       <form action={signIn} style={card}>
         <div style={brand}>
           <span style={dot} />
-          <span style={brandName}>Lander</span>
+          <span style={brandName}>LandR</span>
         </div>
         <div style={h1s}>Welcome back</div>
         <p style={sub}>Sign in with the email and password your agency gave you.</p>
@@ -93,6 +105,12 @@ export default async function SignInPage({
           Sign in
         </button>
         <p style={hint}>Lost your password? Ask the agency admin to read it back to you from the Users tab.</p>
+        <div style={footRow}>
+          <span>New model account?</span>
+          <Link style={linkStyle} href="/register">
+            Create one &rarr;
+          </Link>
+        </div>
       </form>
     </main>
   )
