@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
 import { logLinkClick, getRequestMeta } from "@/lib/analytics"
+import { androidIntentFor, appSchemeFor, iosBounceHtml, isAndroid, isInAppBrowser, isIos } from "@/lib/deeplink"
 
 type Destination = { url: string; disabled?: boolean }
 type GeoRule = { countries: string[]; url: string }
@@ -85,5 +86,28 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 
   await logLinkClick(link.creator_id, link.id, target)
+
+  // 4) Smart deep linking. Only in-app browsers need rescuing: a normal mobile
+  // browser already hands https links to the installed app by itself.
+  const userAgent = req.headers.get("user-agent") || ""
+  if (isInAppBrowser(userAgent)) {
+    const { data: creator } = await supabaseAdmin
+      .from("creators")
+      .select("deep_links")
+      .eq("id", link.creator_id)
+      .single()
+
+    if (!creator || creator.deep_links !== false) {
+      if (isAndroid(userAgent)) {
+        const intent = androidIntentFor(target)
+        if (intent) return NextResponse.redirect(intent)
+      } else if (isIos(userAgent)) {
+        return new NextResponse(iosBounceHtml(target, appSchemeFor(target)), {
+          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+        })
+      }
+    }
+  }
+
   return NextResponse.redirect(target)
 }

@@ -5,7 +5,6 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin"
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 const BUCKET = "media"
-const IMAGE_EXTS = ["jpg", "jpeg", "png", "webp", "gif", "avif"]
 
 function refresh(handle: string) {
   revalidatePath("/" + handle)
@@ -22,30 +21,36 @@ function fileFrom(value: FormDataEntryValue | null): File | null {
 
 function extOf(name: string, fallback: string) {
   const dot = name.lastIndexOf(".")
-  const ext = dot > -1 ? name.slice(dot + 1).toLowerCase() : ""
+  const ext = dot > -1 ? name.slice(dot + 1).toLowerCase().replace(/[^a-z0-9]/g, "") : ""
   return ext.length > 0 && ext.length <= 5 ? ext : fallback
 }
 
-async function uploadPublic(path: string, file: File) {
+/**
+ * Every replacement gets a brand new filename, so the public URL always changes
+ * and no browser or CDN can keep serving the previous picture. The older files
+ * with the same prefix are deleted straight afterwards, so storage stays clean.
+ */
+async function replaceMedia(creatorId: string, prefix: string, file: File, fallbackExt: string): Promise<string> {
+  const filename = prefix + "-" + Date.now() + "." + extOf(file.name, fallbackExt)
+  const path = creatorId + "/" + filename
+
   const { error } = await supabaseAdmin.storage.from(BUCKET).upload(path, file, {
     upsert: true,
     contentType: file.type || undefined,
   })
   if (error) return ""
+
+  const { data: existing } = await supabaseAdmin.storage.from(BUCKET).list(creatorId)
+  const stale = (existing || [])
+    .map((entry) => entry.name)
+    .filter((entryName) => entryName !== filename)
+    .filter((entryName) => entryName.startsWith(prefix + ".") || entryName.startsWith(prefix + "-"))
+    .map((entryName) => creatorId + "/" + entryName)
+  if (stale.length > 0) await supabaseAdmin.storage.from(BUCKET).remove(stale)
+
   const { data } = supabaseAdmin.storage.from(BUCKET).getPublicUrl(path)
   if (!data || !data.publicUrl) return ""
-  return data.publicUrl + "?v=" + Date.now()
-}
-
-/**
- * Uploading over the same path replaces the old file, but only when the new file
- * has the same extension. Switching from jpg to png would otherwise leave the
- * old image sitting in storage forever, so remove the siblings explicitly.
- */
-async function dropOtherExtensions(prefix: string, keepExt: string) {
-  const stale = IMAGE_EXTS.filter((e) => e !== keepExt).map((e) => prefix + "." + e)
-  if (stale.length === 0) return
-  await supabaseAdmin.storage.from(BUCKET).remove(stale)
+  return data.publicUrl
 }
 
 export async function saveAvatar(formData: FormData) {
@@ -57,11 +62,7 @@ export async function saveAvatar(formData: FormData) {
   if (!handle) return
 
   let photo = pasted
-  if (file) {
-    const ext = extOf(file.name, "jpg")
-    photo = await uploadPublic(creatorId + "/avatar." + ext, file)
-    if (photo) await dropOtherExtensions(creatorId + "/avatar", ext)
-  }
+  if (file) photo = await replaceMedia(creatorId, "avatar", file, "jpg")
   if (!photo) return
 
   await supabaseAdmin.from("creators").update({ photo_url: photo }).eq("handle", handle)
@@ -85,11 +86,7 @@ export async function saveIcon(formData: FormData) {
   if (!handle || !id) return
 
   let icon = pasted
-  if (file) {
-    const ext = extOf(file.name, "png")
-    icon = await uploadPublic(creatorId + "/icon-" + id + "." + ext, file)
-    if (icon) await dropOtherExtensions(creatorId + "/icon-" + id, ext)
-  }
+  if (file) icon = await replaceMedia(creatorId, "icon-" + id, file, "png")
   if (!icon) return
 
   await supabaseAdmin.from("links").update({ icon }).eq("id", id)
@@ -143,7 +140,7 @@ export async function addLinkFull(formData: FormData) {
   if (error || !created) return
 
   if (file) {
-    const icon = await uploadPublic(creatorId + "/icon-" + created.id + "." + extOf(file.name, "png"), file)
+    const icon = await replaceMedia(creatorId, "icon-" + created.id, file, "png")
     if (icon) await supabaseAdmin.from("links").update({ icon }).eq("id", created.id)
   }
 
