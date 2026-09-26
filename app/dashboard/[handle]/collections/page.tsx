@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
+import { requireDashboardAccess } from "@/lib/session"
 import type { CSSProperties } from "react"
 import CollectionsUI from "./CollectionsUI"
 import type { CollectionRow, PageRow } from "./CollectionsUI"
@@ -13,15 +14,25 @@ const sub: CSSProperties = { color: "#8892a4", fontSize: 13, marginTop: 4 }
 export default async function CollectionsPage({ params }: { params: Promise<{ handle: string }> }) {
   const { handle } = await params
 
+  // Collections group the viewer's own pages into a campaign. The page list is
+  // therefore scoped to the pages this account manages; an account that
+  // manages every page still sees every page.
+  const access = await requireDashboardAccess(handle)
+  const seesEveryPage = access?.account.role === "admin"
+
   const { data: collections } = await supabaseAdmin
     .from("collections")
     .select("id, name, redirect_url")
     .order("created_at", { ascending: true })
 
-  const { data: creators } = await supabaseAdmin
+  let creatorsQuery = supabaseAdmin
     .from("creators")
     .select("id, handle, display_name, collection_id")
     .order("created_at", { ascending: true })
+
+  if (access && !seesEveryPage) creatorsQuery = creatorsQuery.eq("account_id", access.account.id)
+
+  const { data: creators } = await creatorsQuery
 
   const pages: PageRow[] = (creators || []).map((c: Record<string, unknown>) => ({
     id: String(c.id),
@@ -42,11 +53,12 @@ export default async function CollectionsPage({ params }: { params: Promise<{ ha
       <div style={head}>
         <div style={title}>Collections</div>
         <div style={sub}>
-          Group your pages so you can read their traffic together on Analytics, and give the whole group one
-          optional destination for visitors from flagged countries
+          Group pages into a campaign, give the whole campaign one optional destination for visitors from flagged
+          countries, and read the group together on Analytics
         </div>
       </div>
       <CollectionsUI handle={handle} collections={rows} pages={pages} />
     </div>
   )
+}
 }

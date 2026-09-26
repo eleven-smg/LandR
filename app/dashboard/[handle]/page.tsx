@@ -45,7 +45,7 @@ const RANGES = [
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-/** A collection with no pages must read as zero, not as this page's traffic. */
+/** A collection with no pages you manage must read as zero, not as this page. */
 const NO_MATCH = "00000000-0000-0000-0000-000000000000"
 
 const exportRow: CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }
@@ -231,15 +231,15 @@ export default async function AnalyticsPage({
     )
   }
 
-  // A collection spans pages that belong to other people, so widening these
-  // numbers past the handle in the address bar is an admin job. The dashboard
-  // layout has already checked that this account may see this page; this call
-  // only reads the role. A model who passes ?collection=... is ignored rather
-  // than refused, and still sees their own page.
+  // A collection is the page owner's own grouping of their own pages — a
+  // campaign folder, not an admin tool — so the filter is open to anyone who
+  // can already open this dashboard. It still never shows more than the viewer
+  // is allowed to see: an account that manages every page gets every page in
+  // the collection, anyone else gets only the pages assigned to their account.
   const access = await requireDashboardAccess(creator.handle)
-  const canFilterByCollection = access?.account.role === "admin"
+  const seesEveryPage = access?.account.role === "admin"
 
-  const collectionRes = canFilterByCollection
+  const collectionRes = access
     ? await supabaseAdmin.from("collections").select("id, name").order("created_at", { ascending: true })
     : { data: null }
 
@@ -248,18 +248,17 @@ export default async function AnalyticsPage({
     name: String(c.name || "Untitled collection"),
   }))
 
-  const wanted = canFilterByCollection ? String(sp.collection || "") : ""
+  const wanted = access ? String(sp.collection || "") : ""
   const collection = collectionOptions.find((c) => c.id === wanted) || null
 
   let collectionPageCount = 0
   let creatorIds: string[] = [creator.id]
 
-  if (collection) {
-    const { data: grouped } = await supabaseAdmin
-      .from("creators")
-      .select("id")
-      .eq("collection_id", collection.id)
-    const ids = ((grouped || []) as Array<Record<string, unknown>>).map((c) => String(c.id))
+  if (collection && access) {
+    let grouped = supabaseAdmin.from("creators").select("id").eq("collection_id", collection.id)
+    if (!seesEveryPage) grouped = grouped.eq("account_id", access.account.id)
+    const { data: groupedData } = await grouped
+    const ids = ((groupedData || []) as Array<Record<string, unknown>>).map((c) => String(c.id))
     collectionPageCount = ids.length
     creatorIds = ids.length > 0 ? ids : [NO_MATCH]
   }
@@ -533,45 +532,43 @@ export default async function AnalyticsPage({
         </div>
       </div>
 
-      {canFilterByCollection ? (
-        <div>
-          <form method="get" style={{ ...exportRow, marginTop: 14 }}>
-            <input type="hidden" name="range" value={range.key} />
-            <label style={filterLabel} htmlFor="collection">
-              Filter on collection:
-            </label>
-            <select id="collection" name="collection" defaultValue={collection ? collection.id : ""} style={selectBox}>
-              <option value="">This page only (/{creator.handle})</option>
-              {collectionOptions.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <button type="submit" style={{ ...exportBtn, cursor: "pointer" }}>
-              Apply
-            </button>
-            {collection ? (
-              <a style={exportBtn} href={"?range=" + range.key}>
-                Clear
-              </a>
-            ) : null}
-          </form>
-          <div style={filterNote}>
-            {collectionOptions.length === 0
-              ? "No collections yet. Create one on the Collections tab to compare a group of pages here."
-              : collection
-                ? collectionPageCount === 0
-                  ? "No pages are in this collection yet, so every figure below reads zero."
-                  : "Every figure below covers all " +
-                    collectionPageCount +
-                    " pages in this collection. CSV downloads still cover /" +
-                    creator.handle +
-                    " only."
-                : "Only admins can widen these numbers to a whole collection."}
-          </div>
+      <div>
+        <form method="get" style={{ ...exportRow, marginTop: 14 }}>
+          <input type="hidden" name="range" value={range.key} />
+          <label style={filterLabel} htmlFor="collection">
+            Filter on collection:
+          </label>
+          <select id="collection" name="collection" defaultValue={collection ? collection.id : ""} style={selectBox}>
+            <option value="">This page only (/{creator.handle})</option>
+            {collectionOptions.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <button type="submit" style={{ ...exportBtn, cursor: "pointer" }}>
+            Apply
+          </button>
+          {collection ? (
+            <a style={exportBtn} href={"?range=" + range.key}>
+              Clear
+            </a>
+          ) : null}
+        </form>
+        <div style={filterNote}>
+          {collectionOptions.length === 0
+            ? "No collections yet. Create one on the Collections tab to read a campaign's pages together."
+            : collection
+              ? collectionPageCount === 0
+                ? "No pages in this collection yet, so every figure below reads zero."
+                : "Every figure below covers all " +
+                  collectionPageCount +
+                  " pages in this collection. CSV downloads still cover /" +
+                  creator.handle +
+                  " only."
+              : "Group pages into a collection to read a whole campaign together."}
         </div>
-      ) : null}
+      </div>
 
       <div style={{ ...exportRow, marginBottom: 18 }}>
         <span style={{ color: "#6b7396", fontSize: 12 }}>Download this {range.label.toLowerCase()}:</span>
