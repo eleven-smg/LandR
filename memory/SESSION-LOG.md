@@ -290,6 +290,51 @@ tell is an artefact the repo no longer contains.
 script mode"), so there has been no row count, read or migration in Blocks 5–6, and the duplicate
 `/jaero_yt` page still cannot be deleted from here.
 
+### Block 7 — the signup rate limit, and the memory files brought back in line
+
+| SHA | What |
+| --- | --- |
+| `3a7d88d3` | `memory/PROGRESS.md` refreshed to `3efb889a`: the home-page copy lag, C7's residual closed as F27, Part 3 rewritten to six blocks, queue renumbered |
+| `e40f6ca2` | `memory/SESSION-LOG.md` — Block 6 |
+| `d721982b` | **new** `lib/signupLimit.ts`; `app/register/actions.ts` enforces the limit; `app/register/page.tsx` explains the refusal — closes **B9** → F29 |
+| `50bd4c0d` | `memory/BUGS.md` B9 → F29; `memory/PROGRESS.md` Step 22 → DONE, pack totals now **13 DONE · 4 PARTIAL · 6 NOT STARTED · 1 CANCELLED** |
+
+**`/register` had no ceiling of any kind.** One request created one account **and one public page**,
+unlimited, on a free-tier database that auto-pauses when it is hammered or idle (B8) — the cheapest
+way to take the client's live page down, and the last P1 reachable without a database connection.
+The striking part is that the plumbing had been there since August: `signup_log(id, ip, handle,
+created_at)` and `signup_log_ip_created_at_idx` existed with **nothing writing to them** (0 rows on
+3 Sep, and the index still appears in the live unused-index advisory list, which is how its name was
+confirmed while Supabase is unreachable). So **no migration was needed** — which mattered, because
+there has been no database access since Block 4.
+
+**What shipped.** `lib/signupLimit.ts`: `clientIp()` takes the first `x-forwarded-for` entry, with a
+comment saying out loud that it is a rate-limit bucket key and **never** authorization, because a
+proxy header is caller-controlled. `checkSignupLimit()` does one day-window read and checks both
+ceilings against it — **3 per IP per hour, 8 per day**. `recordSignup()` writes the row.
+`register/actions.ts` checks the limit *after* the cheap field validation and *before* any other
+query, so a bot cannot make the database work before it is refused, and it logs **only completed
+signups**, so a bounced attempt never counts against a real person. `register/page.tsx` renders an
+`error=limit` message. Helper and caller shipped in the same commit, per the Block 5 lesson.
+
+**The deliberate trade-off.** A read error **allows** the signup and logs loudly: a database blip
+must not lock every new user out of registering. That is a choice, not an oversight, and it is why
+the log line matters — silently failing open is the same as no limit at all.
+
+**Two rules added to `BUGS.md`.** A whole *table* can sit unused just like a column (the F22 lesson,
+one level up): `signup_log` and its index read as done in the schema while `/register` stayed
+unlimited for a month. And every refusal needs a message — a rate limit that bounces to an empty
+form reads as a broken button.
+
+**Memory housekeeping.** `STATE.md` had drifted furthest of the four files and was corrected in this
+block: it still said `main @ 38c44b42`, claimed "Supabase MCP reconnected" (it has been unreachable
+since Block 4), described `users/` as "still old UI, B22" — wrong since F23 — and listed
+`signup_log` as "table unused", which F29 has just changed. `lib/collectionScope.ts` and
+`lib/signupLimit.ts` were also missing from its file tree.
+
+**Proof: CODE only.** Verifying F29 needs one real `/register` signup leaving a `signup_log` row,
+which needs the client's browser — and confirming the row needs Supabase back.
+
 ## 2026-09-26 (morning) — audit, benchmark recovery, memory system
 
 - Located the plan of record: the client supplied `project landr.zip` (24 step PDFs + 24 TEST
