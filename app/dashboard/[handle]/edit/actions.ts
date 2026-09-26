@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache"
 import { SECTION_KEYS, normalizeOrder } from "@/lib/sections"
 import { clampPercent, clampZoom, normalizeSubscribeStyle, normalizeTemplate } from "@/lib/templates"
 import { requireDashboardAccess } from "@/lib/session"
+import { getRequestMeta } from "@/lib/analytics"
+import { tierForCountry } from "@/lib/subscriberGeo"
 
 type Social = { platform: string; url: string }
 
@@ -226,9 +228,26 @@ export async function subscribe(_prev: SubscribeState, formData: FormData): Prom
 
   if (!creator) return { error: "Something went wrong. Try again." }
 
-  const { error } = await supabaseAdmin
-    .from("subscribers")
-    .insert({ creator_id: creator.id, handle, email, name: name || null })
+  /**
+   * Where the address came from, written at signup because it cannot be
+   * recovered afterwards: the same Vercel geo headers the analytics already
+   * reads, plus the world tier from the country rules taxonomy. Storing the
+   * tier now means a mailing can be cut to one country or one tier with a
+   * single WHERE clause, and a later change to the tier lists never silently
+   * rewrites who was already mailed.
+   */
+  const meta = await getRequestMeta()
+
+  const { error } = await supabaseAdmin.from("subscribers").insert({
+    creator_id: creator.id,
+    handle,
+    email,
+    name: name || null,
+    country: meta.country,
+    region: meta.region,
+    city: meta.city,
+    tier: tierForCountry(meta.country),
+  })
 
   if (error) {
     // 23505 is a unique violation: the address is already on the list, which is

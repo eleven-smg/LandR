@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
 import { requireDashboardAccess } from "@/lib/session"
 import { handlesByCreatorId, resolveCollectionScope } from "@/lib/collectionScope"
+import { isTierId, tierForCountry, tierLabel } from "@/lib/subscriberGeo"
 
 export const dynamic = "force-dynamic"
 
@@ -84,22 +85,50 @@ export async function GET(request: Request, { params }: { params: Promise<{ hand
    *
    * Unsubscribes are exported rather than hidden, and marked, so whoever mails
    * the list can see who opted out instead of discovering it the hard way.
+   *
+   * country= and tier= are the mailing cuts: one country, or one world tier,
+   * for when a send is aimed at a single market. They narrow the list and are
+   * written into the filename, so a single-country file can never be mistaken
+   * for the whole list. Tier falls back to the country lookup for rows written
+   * before the column existed.
    */
   if (what === "subscribers") {
-    const { data } = await supabaseAdmin
+    const wantedCountry = String(url.searchParams.get("country") || "").trim().toUpperCase()
+    const wantedTier = String(url.searchParams.get("tier") || "").trim().toLowerCase()
+
+    let query = supabaseAdmin
       .from("subscribers")
-      .select("created_at, creator_id, handle, email, unsubscribed_at")
+      .select("created_at, creator_id, handle, email, name, country, region, city, tier, unsubscribed_at")
       .in("creator_id", creatorIds)
-      .order("created_at", { ascending: true })
-      .limit(20000)
+    if (wantedCountry.length === 2) query = query.eq("country", wantedCountry)
+    if (isTierId(wantedTier)) query = query.eq("tier", wantedTier)
+
+    const { data } = await query.order("created_at", { ascending: true }).limit(20000)
 
     const rows = (data || []) as Array<Record<string, unknown>>
-    const header = ["Email", "Signed up", "Status", "Unsubscribed"]
+    const header = [
+      "Email",
+      "Name",
+      "Country",
+      "Region",
+      "City",
+      "Tier",
+      "Signed up",
+      "Status",
+      "Unsubscribed",
+    ]
     const body = csv(
       grouped ? ["Page", ...header] : header,
       rows.map((r) => {
+        const code = String(r.country || "")
+        const tier = String(r.tier || "") || tierForCountry(code) || ""
         const line = [
           r.email,
+          r.name,
+          code,
+          r.region,
+          r.city,
+          tier ? tierLabel(tier) : "",
           r.created_at,
           r.unsubscribed_at ? "unsubscribed" : "subscribed",
           r.unsubscribed_at,
@@ -109,7 +138,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ hand
         return grouped ? [pageOf(r.creator_id) || String(r.handle || ""), ...line] : line
       }),
     )
-    return send(body, "landr-subscribers-" + scoped + ".csv")
+    const cut = wantedCountry.length === 2 ? "-" + wantedCountry.toLowerCase() : isTierId(wantedTier) ? "-" + wantedTier : ""
+    return send(body, "landr-subscribers-" + scoped + cut + ".csv")
   }
 
   if (what === "clicks") {
