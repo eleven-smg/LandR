@@ -6,6 +6,7 @@ import SaveButton from "./SaveButton"
 import ActionForm from "./ActionForm"
 import SectionOrder from "./SectionOrder"
 import AvatarCard from "./AvatarCard"
+import CountryRules from "./CountryRules"
 import { likeSafeHandle } from "@/lib/handles"
 import { SECTION_LABELS, normalizeOrder } from "@/lib/sections"
 import { clampPercent, clampZoom, normalizeSubscribeStyle, normalizeTemplate } from "@/lib/templates"
@@ -24,7 +25,6 @@ import {
   savePreview,
   removePreview,
   saveLayout,
-  saveGeoRules,
 } from "./actions"
 import { saveSectionOrder } from "./orderActions"
 import { saveIcon, removeIcon, addLinkFull } from "./mediaActions"
@@ -70,7 +70,6 @@ const input: CSSProperties = {
   marginTop: 4,
   boxSizing: "border-box",
 }
-const lbl: CSSProperties = { fontSize: 12, color: "#9aa4c2", display: "block", marginTop: 8 }
 const rowStyle: CSSProperties = { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }
 const nf: CSSProperties = { padding: 24, color: "#fff" }
 const page: CSSProperties = { color: "#fff" }
@@ -93,7 +92,6 @@ const sub: CSSProperties = { color: "#9aa4c2", fontSize: 13, marginBottom: 14 }
 const link: CSSProperties = { color: "#5b7fff" }
 const sumStyle: CSSProperties = { fontSize: 15, fontWeight: 600, cursor: "pointer" }
 const sumRow: CSSProperties = { ...sumStyle, display: "flex", gap: 8, alignItems: "center" }
-const ta: CSSProperties = { ...input, minHeight: 66 }
 const srow: CSSProperties = { ...rowStyle, marginTop: 10, borderTop: "1px solid #232940", paddingTop: 10 }
 const frow: CSSProperties = { ...rowStyle, flex: 1 }
 const pin: CSSProperties = { ...input, width: 120, marginTop: 0 }
@@ -134,14 +132,6 @@ const thumb: CSSProperties = {
   border: "1px solid #232940",
 }
 const tag: CSSProperties = { fontSize: 11, color: "#9aa4c2", background: "#232940", borderRadius: 6, padding: "2px 7px" }
-const arrow: CSSProperties = {
-  padding: "5px 9px",
-  background: "#232940",
-  border: "none",
-  borderRadius: 8,
-  color: "#cdd6f4",
-  cursor: "pointer",
-}
 
 export default async function EditPage({ params }: { params: Promise<{ handle: string }> }) {
   const { handle } = await params
@@ -169,6 +159,10 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
   const rows = linkResult.data || []
   const subRows = (subResult.data || []) as { email: string; name: string | null; created_at: string }[]
   const socials: Social[] = Array.isArray(creator.socials) ? creator.socials : []
+
+  // The flagged list is set once in the Country rules tab; each link's rules can
+  // point at all of it, at a world tier, or at countries picked by hand.
+  const flaggedCountries = ((creator.blocked_countries as string[]) || []).map((c) => String(c).toUpperCase())
 
   const builderItems = rows.map((l: Record<string, unknown>) => ({
     id: String(l.id),
@@ -300,6 +294,7 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
                 const label = String(l.label || "Untitled")
                 const type = String(l.type || "button")
                 const hidden = l.is_active === false
+                const geoRules = (l.geo_rules as { countries: string[]; url: string }[]) || []
                 return (
                   <details key={String(l.id)} style={item}>
                     <summary style={sumRow}>
@@ -380,25 +375,17 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
                       </ActionForm>
                     </details>
 
-                    <details style={item}>
-                      <summary style={albl}>Country routing for this link</summary>
-                      <ActionForm action={saveGeoRules} style={row8}>
-                        <input type="hidden" name="handle" value={creator.handle} />
-                        <input type="hidden" name="id" value={String(l.id)} />
-                        <label style={lbl}>
-                          One rule per line, format <b>NG,GH = https://t.me/africa</b>
-                          <textarea
-                            style={ta}
-                            name="geo_rules"
-                            defaultValue={((l.geo_rules as { countries: string[]; url: string }[]) || [])
-                              .map((r) => r.countries.join(",") + " = " + r.url)
-                              .join(String.fromCharCode(10))}
-                            placeholder="NG,GH = https://t.me/africa"
-                          />
-                        </label>
-                        <SaveButton label="Save country rules" variant="ghost" />
-                      </ActionForm>
-                      <p style={hint}>Link rotation lives in the Geoblocking tab so every rotation group sits in one place.</p>
+                    <details style={item} open={geoRules.length > 0}>
+                      <summary style={albl}>
+                        Country rules for this link{" "}
+                        {geoRules.length > 0 ? <span style={tag}>{geoRules.length}</span> : null}
+                      </summary>
+                      <CountryRules
+                        handle={String(creator.handle)}
+                        linkId={String(l.id)}
+                        initial={geoRules}
+                        flagged={flaggedCountries}
+                      />
                     </details>
 
                     <div style={row8}>
