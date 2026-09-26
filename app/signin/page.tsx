@@ -100,17 +100,28 @@ export default async function SignInPage({
             name="identifier"
             type="text"
             autoComplete="username"
+            autoCapitalize="none"
+            spellCheck={false}
             placeholder="ava or you@agency.com"
           />
         </label>
         <label style={lbl}>
           Password
-          <input style={input} name="password" type="password" autoComplete="current-password" placeholder="********" />
+          {/*
+            autoComplete="current-password" told Chrome and Google Password
+            Manager to fill the saved password the moment this page opened, so
+            after signing out the form came back with both fields populated.
+            "new-password" is the value password managers treat as do-not-fill,
+            which leaves the field empty while the username above is still
+            suggested. Saved credentials live in the visitor's own browser
+            profile, so this never appeared on anybody else's device.
+          */}
+          <input style={input} name="password" type="password" autoComplete="new-password" placeholder="********" />
         </label>
         <button style={btn} type="submit">
           Sign in
         </button>
-        <p style={hint}>Lost your password? Ask the agency admin to read it back to you from the Users tab.</p>
+        <p style={hint}>Lost your password? Ask the agency admin to read it back to you from the Team tab.</p>
         <div style={footRow}>
           <span>New model account?</span>
           <Link style={linkStyle} href="/register">
