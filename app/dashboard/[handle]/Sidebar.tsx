@@ -7,6 +7,10 @@ type Props = {
   handle: string
   displayName: string
   photoUrl: string | null
+  /** Only true when this account manages more than one page. */
+  showHome?: boolean
+  roleLabel?: string
+  accountName?: string
 }
 
 type Item = { slug: string; label: string; icon: string }
@@ -20,7 +24,7 @@ const ITEMS: Item[] = [
   { slug: "edit", label: "Page Editor", icon: "pencil" },
   { slug: "collections", label: "Collections", icon: "grid" },
   { slug: "geoblocking", label: "Country rules", icon: "globe" },
-  { slug: "users", label: "Users", icon: "users" },
+  { slug: "users", label: "Team", icon: "users" },
 ]
 
 function NavIcon({ name }: { name: string }) {
@@ -32,6 +36,14 @@ function NavIcon({ name }: { name: string }) {
     strokeWidth: 2,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
+  }
+  if (name === "home") {
+    return (
+      <svg {...common}>
+        <path d="M3 10.5 12 3l9 7.5" />
+        <path d="M5 9.5V21h14V9.5" />
+      </svg>
+    )
   }
   if (name === "chart") {
     return (
@@ -75,7 +87,14 @@ function NavIcon({ name }: { name: string }) {
   )
 }
 
-export default function Sidebar({ handle, displayName, photoUrl }: Props) {
+export default function Sidebar({
+  handle,
+  displayName,
+  photoUrl,
+  showHome = false,
+  roleLabel = "Owner",
+  accountName = "",
+}: Props) {
   const pathname = usePathname() || ""
   const base = "/dashboard/" + handle
   const initial = (displayName || handle || "?").charAt(0).toUpperCase()
@@ -86,6 +105,15 @@ export default function Sidebar({ handle, displayName, photoUrl }: Props) {
         <div className="logo-dot" />
         <span>LandR</span>
       </div>
+
+      {showHome ? (
+        <Link href="/dashboard" className="nav-item">
+          <NavIcon name="home" />
+          <span>All models</span>
+        </Link>
+      ) : null}
+
+      {showHome ? <div className="nav-current">{displayName}</div> : null}
 
       {ITEMS.map((it) => {
         const href = it.slug ? base + "/" + it.slug : base
@@ -105,8 +133,8 @@ export default function Sidebar({ handle, displayName, photoUrl }: Props) {
           {photoUrl ? <img src={photoUrl} alt={displayName} /> : <span>{initial}</span>}
         </div>
         <div className="user-info">
-          <div className="user-name">{displayName}</div>
-          <div className="user-role">Admin</div>
+          <div className="user-name">{accountName || displayName}</div>
+          <div className="user-role">{roleLabel}</div>
         </div>
       </div>
     </nav>
