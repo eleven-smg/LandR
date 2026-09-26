@@ -3,9 +3,9 @@
 **Plan of record:** the 24-step pack from `project landr.zip`. Added scope from the chat sessions
 is Part 2. No other roadmap.
 
-**Last verified:** 2026-09-26 against `main @ 2171e5fd` (the 26 Sep code session; memory files
-landed after it). Database facts in `STATE.md` still date from 3 Sep — the Supabase connection is
-not available in this session, so nothing below is freshly DB-verified.
+**Last verified:** 2026-09-26 against `main @ 78af4f8b` (last application-code commit of the 26 Sep
+session; memory commits landed after it). Schema facts in `STATE.md` are live-verified as of 26 Sep;
+row counts still date from 3 Sep.
 
 **Status:** `DONE` · `PARTIAL` · `NOT STARTED` · `CANCELLED`
 **Proof:** `LIVE` = verified in production or in the database · `CODE` = in the repo, never
@@ -23,16 +23,16 @@ exercised by a real user · `NONE`
 | 4 | Backgrounds (image/video picker + 4th theme) | DONE | LIVE | Exceeded: 4 themes (`noir`, `blush`, `aurora`, `gold`) **and** 4 whole-page templates. Background crop/zoom added later (A13). |
 | 5 | Button Polish (preview image + size) | DONE | CODE | Per-link preview image, size (`md`), shape (`pill`), colour, subtitle in `edit/page.tsx`. |
 | 6 | Visual Builder (drag reorder & resize) | PARTIAL | LIVE | `edit/Builder.tsx` does the **pack** scope (link buttons, phone-width preview, S/M/L). The client then redefined "visual builder" as a whole-page canvas — tracked separately as **A24, not started**. |
-| 7 | Geoblocking & Smart Routing | DONE | CODE | Rewritten twice. Flagged countries see the normal page, only per-link destinations change; redirect demoted to an option. Rotation uses the atomic `next_rotation_index()`. B13 decided and built (per-link swaps; collections own only the group redirect and the analytics filter). The unusable free-text rule box was replaced 26 Sep by `edit/CountryRules.tsx` (F16) and the tab renamed **Country rules** (F17) — both CODE only, not yet exercised on the deploy. |
+| 7 | Geoblocking & Smart Routing | DONE | CODE | Rewritten three times. Flagged countries see the normal page, only per-link destinations change; redirect demoted to an option. Rotation uses the atomic `next_rotation_index()`. The free-text rule box was replaced 26 Sep by `edit/CountryRules.tsx` (F16) and the tab renamed **Country rules** (F17). Since `62c8463d` the resolution order in `/go/[id]` is **per-link rule → collection destination → rotation → link default** (see C4). CODE only. |
 | 8 | Custom Domain (+ per-creator subdomains) | NOT STARTED | NONE | Still on `alandr.vercel.app`. Pack flags subdomains may need a paid Vercel plan; Hobby is non-commercial. |
-| 9 | Multi-Client (scoped client logins + Clients overview) | DONE | CODE | **Re-architected:** an `accounts` table with `role` (`admin`/`model`) + Users tab, instead of the pack's `creators.dashboard_password` + shared env password. Gate lives in `app/dashboard/[handle]/layout.tsx`; since 26 Sep every server action and the export route gate themselves too (F10–F12), and Users can delete a page as well as a login (F15). Never tested with a second real account. |
-| 10 | Deeper Analytics (top countries + richer dashboard) | DONE | LIVE | Rebuilt on real visitor data: unique visitors, sessions, clicked-nothing, time on page, entry/exit, languages, screens, countries, "which link earns". Admin-only "Filter on collection" added 26 Sep (F14, CODE). |
-| 11 | Public Self-Serve Sign-Up | DONE | LIVE | **Deviation:** route is `/register`, not `/signup`; writes `accounts` + a `creators` page. One extra page `/jaero_yt` exists from a test (F13) and can now be deleted from Users. |
+| 9 | Multi-Client (scoped client logins + Clients overview) | DONE | CODE | **Re-architected twice.** An `accounts` table with `role` (`admin`/`model`/`creator`) replaced the pack's shared env password; then the 26 Sep creator work added a creator home, `creator_clients`, compare-models and the work claim (C1–C7). Gate lives in `app/dashboard/[handle]/layout.tsx`; every server action and the export route gate themselves too (F10–F12). Never tested with a second real account. |
+| 10 | Deeper Analytics (top countries + richer dashboard) | DONE | LIVE | Rebuilt on real visitor data: unique visitors, sessions, clicked-nothing, time on page, entry/exit, languages, screens, countries, "which link earns". "Filter on collection" added 26 Sep (F14, CODE); its dropdown still lists other accounts' collection names (B21). |
+| 11 | Public Self-Serve Sign-Up | DONE | LIVE | **Deviation:** route is `/register`, not `/signup`; writes `accounts` + a `creators` page. One extra page `/jaero_yt` exists from a test (F13) and can now be deleted from Team. |
 | 12 | Rotate Your Secret Keys | CANCELLED | — | Client declined outright (22 Aug, restated later). Keys leaked into the chat archive and the handoff PDF remain live. Do not raise again; recorded in `DECISIONS.md`. |
 | 13 | Analytics Date-Range Picker | DONE | LIVE | **Deviation:** Day / Week / Month / Year tabs instead of 7 / 30 / 90 / All time. |
 | 14 | Best-Time-to-Post Heatmap (7×24) | NOT STARTED | NONE | No heatmap in `app/dashboard/[handle]/page.tsx`. |
 | 15 | Traffic Sources Table (views, clicks & CTR) | PARTIAL | LIVE | Referrer/source breakdowns and per-link click rate shipped; the **Mediums** and **Events** tiles still render "not built yet" because UTM capture and an events table do not exist (blocks on A18/Step 18). The reference dashboard shows both tiles, so B12 stands. |
-| 16 | CSV Export | PARTIAL | CODE | **Deviation:** shipped 3 exports (views, clicks, per-link) via `dashboard/[handle]/export/route.ts`, 20k row cap. The pack's **subscribers CSV is missing**, and the route still ignores the new collection filter (B20). The route was unauthenticated (B1) — fixed 26 Sep by `d56f5952`, logged as F10. |
+| 16 | CSV Export | PARTIAL | CODE | **Deviation:** shipped 3 exports (views, clicks, per-link) via `dashboard/[handle]/export/route.ts`, 20k row cap. The pack's **subscribers CSV is missing**, and the route still ignores the collection filter (B20). The route was unauthenticated (B1) — fixed 26 Sep by `d56f5952`, logged as F10. |
 | 17 | Live Visitor Counter ("N online now") | NOT STARTED | NONE | — |
 | 18 | UTM Link Builder (`/dashboard/[handle]/utm`) | NOT STARTED | NONE | No `utm/` route. Also blocks Step 15's Mediums tile. |
 | 19 | Scheduled & Expiring Links | PARTIAL | CODE | `starts_at` / `ends_at` columns exist; **nothing filters on them** and there is no `schedule/` UI. |
@@ -60,7 +60,7 @@ Walked turn by turn through the 22 Aug and 25 Aug archive. Source = the turn tha
 | A6 | Geoblocking by world tiers (1st/2nd/3rd) with select/deselect | DONE | CODE | 22 Aug 10:55 PM → `lib/countryGroups.ts`. The tiers were unused by the per-link UI until `ca011598` wired `TIERS` into the new scope dropdown (F16). |
 | A7 | Link Rotation UI (rotation groups, dropdown) | DONE | LIVE | 22 Aug 10:55 PM |
 | A8 | Remove the duplicated geoblocking section from the editor | DONE | CODE | 22 Aug 10:55 PM |
-| A9 | Collections concept corrected (group pages) | DONE | CODE | 22 Aug 10:55 PM — **B13 settled 26 Sep** from the reference screenshots: a collection is a group of pages + one optional redirect + an analytics filter. Per-country swaps stay per link. The analytics filter shipped 26 Sep (F14, admin-only); CSV export still page-only (B20). |
+| A9 | Collections concept corrected (group pages) | DONE | CODE | 22 Aug 10:55 PM — settled twice: 26 Sep morning (a collection groups **your own** pages + an analytics filter, F14) and 26 Sep afternoon (what the group can actually *do* — see C4/C5, F18). |
 | A10 | Embed arrangement templates, ~5 layouts, Instagram-picker style | DONE | LIVE | 25 Aug 3:39 AM → 6 layouts shipped |
 | A11 | Section ordering — drag whole sections (header, socials, buttons, subscribe, videos, embeds) | DONE | LIVE | 25 Aug 3:39 AM |
 | A12 | "Template" means the **whole page look**, not the background; 4 templates total | DONE | LIVE | 25 Aug 4:18 PM / 4:58 PM → Classic photo, Spotlight, Mosaic, Glass sheet |
@@ -89,36 +89,52 @@ FanplaceFinder no longer exists in the reference product — nothing to build fo
 
 ---
 
+## Part 2b — creator / model architecture (agreed 26 Sep, after Part 2 was written)
+
+| ID | Item | Status | Proof | Notes |
+| --- | --- | --- | --- | --- |
+| C1 | **Creator account role + creator home at `/dashboard`** listing every model he manages; one dashboard still = one model. A model with one page and no team links is redirected straight to her own dashboard | DONE | CODE | `dc8abf22`, `app/dashboard/page.tsx`. Migration `creator_accounts_and_client_links` |
+| C2 | **`creator_clients` management link** — the model always owns her page; a creator's reach is a row, never ownership. Model-invited → she disconnects instantly; creator-created → release request he approves | DONE | CODE | `app/dashboard/actions.ts` |
+| C3 | **Compare models** — pick any subset and compare them | DONE | CODE | `b372ead1`, `/dashboard/compare` |
+| C4 | **Collection country destinations** — per-platform URLs for flagged-country visitors, matched on `links.collection_key` or the link's own destination host; own switch | DONE | CODE | `62c8463d` + `e24c44c2`. Closes F18 |
+| C5 | **Campaign takeover** — one URL that sends every visitor to the group's pages straight out, logged first, never under `?preview=1`; own switch | DONE | CODE | `e24c44c2` + `960b1c5c` |
+| C6 | **Who does the work (work claim)** — creator declares at accept, model approves, approved claim replaces her instant Disconnect with Request release | DONE | CODE | Migration `creator_clients_work_claim` + `af3d3fba` + `78af4f8b`. Closes B24 → F22 |
+| C7 | **Team tab rebuilt for a model** — her own team logins + her creator connections; "Delete a page" moved to an admin-only screen | NOT STARTED | NONE | **B22, P1 — last real gap in the creator architecture.** The sidebar item was relabelled in `dc8abf22` but the page behind it is still the old admin-only user management, so a creator sees controls every action refuses |
+
+---
+
 ## Part 3 — where we are and what is next
 
-**26 Sep 2026 was the first code session since 25 Aug.** It fixed the site-wide tap/click bug (F9),
-closed the two P0 authorization holes plus three more found while fixing them (F10–F12), then
-delivered the reference-driven UI work: the per-link country-rules builder (F16), the Country rules
-rename (F17), the admin-only analytics collection filter (F14), the Collections rewording, and the
-first delete-a-page control in the product (F15). All of it is **CODE proof only** — there is no
-typecheck or CI (B14) and the deploy result for these commits has not been inspected.
+**26 Sep 2026 was the first code session since 25 Aug**, and it ran in four blocks: the site-wide
+tap/click bug (F9) and the authorization sweep (F10–F12); the reference-driven UI work (F14–F17);
+the creator/model architecture (C1–C3); then the client's 12:15 list — favicon (F20), the sign-in
+autofill scare (F19, never a leak), collections that actually do something (F18/F21, C4–C5) and the
+work claim (F22, C6). Migrations are DB-verified; **all code is CODE proof only** — there is a
+typecheck workflow but no tool here can read its result (B14), and the deploy has not been walked.
 
-**Queue, in order (client-approved 26 Sep):**
+**Queue, in order:**
 
-1. ~~P0 security fixes (B1 + B2)~~ — **done** 26 Sep, F10–F12.
-2. ~~Tap/Enter bug~~ — **done** 26 Sep, F9.
-3. ~~Country-rules UI (B18 + B19)~~ — **done** 26 Sep, F16 + F17. Residual: sweep the rest of the app
-   for leftover "blocked" copy (B19, narrowed).
-4. ~~Collections: analytics filter + optional redirect wording~~ — **done** 26 Sep, F14. Residual:
-   the CSV export ignores the collection (B20).
-5. ~~Delete a creator / page (B17)~~ — **done** 26 Sep, F15. Still to do in the product itself:
-   actually delete the duplicate `/jaero_yt` page.
-6. **Verify the session's work.** Nothing above has been compiled or clicked. Either add the
-   typecheck (B14) or walk the deploy: country rules on a link, the collection filter as admin and
-   as a model, and one page deletion.
-7. **Infra** — move Supabase off the free tier (B8: the project auto-paused and the live page served
+1. ~~P0 security fixes, tap bug, country rules, collections filter, delete-a-page~~ — **done** 26 Sep
+   (F9–F17).
+2. ~~Creator accounts, creator home, compare models~~ — **done** 26 Sep (C1–C3).
+3. ~~Collections: make the destination real; favicon; sign-in autofill; work claim~~ — **done**
+   26 Sep (F18–F22, C4–C6).
+4. **C7 / B22 — rebuild the Team tab for a model.** Last real gap in the creator architecture, and
+   the only place the product still shows controls it will refuse.
+5. **B21 + B20 together** (same file neighbourhood): scope the analytics collection dropdown by
+   `owner_account_id`, and teach the CSV export the collection filter.
+6. **Verify on the deploy.** Nothing in this session has been clicked: favicon, empty password field,
+   a country rule, the collection filter, one page deletion, creator home, compare, the three
+   collection behaviours, and an accept-with-claim → approve → blocked disconnect.
+7. Delete the duplicate `/jaero_yt` page (possible in the product since F15, still not done).
+8. **Infra** — move Supabase off the free tier (B8: the project auto-paused and the live page served
    database errors for ~3 weeks).
-8. **A24 visual page builder** — the biggest item; still blocked on the profile-photo resize and
+9. **A24 visual page builder** — the biggest item; still blocked on the profile-photo resize and
    canvas decisions in `DECISIONS.md`.
-9. **A25 / B3 / B4 session + password hardening** — required before ten real model logins exist.
-10. **Finish the partials:** Step 15 (needs Step 18 UTM), Step 16 (subscribers CSV + B20), Step 19
+10. **A25 / B3 / B4 session + password hardening** — required before ten real model logins exist.
+11. **Finish the partials:** Step 15 (needs Step 18 UTM), Step 16 (subscribers CSV + B20), Step 19
     (filter on `starts_at`/`ends_at`), Step 22 (write `signup_log`, add rate limit), A17 editor
-    compaction.
-11. **Then the untouched steps:** 14, 17, 18, 20, 21, 23, 24, and 8 when a domain is bought.
-12. Housekeeping: A30 delete the stale branch; B14 add a typecheck so "CODE" means compiled.
-13. Only after LandR is done: `eleven-smg/chatterdesk`.
+    compaction, B19 copy sweep, B23 `.nav-current` rule.
+12. **Then the untouched steps:** 14, 17, 18, 20, 21, 23, 24, and 8 when a domain is bought.
+13. Housekeeping: A30 delete the stale branch; B5 regenerate `sql/schema.sql` from the live database.
+14. Only after LandR is done: `eleven-smg/chatterdesk`.
