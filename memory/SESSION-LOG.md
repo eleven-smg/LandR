@@ -4,7 +4,57 @@ Append one entry per working session, newest first. Always record commit SHAs.
 
 ---
 
-## 2026-09-26 — audit, benchmark recovery, memory system
+## 2026-09-26 (afternoon) — first code session since 25 Aug: the tap bug + an authorization sweep
+
+Client approved code changes ("lets start"). Nine commits on `main`, head was `917494bf` before.
+
+| SHA | What |
+| --- | --- |
+| `923ca5d3` | `app/GlobalProgress.tsx` — fixed **F9**, the Enter-key / dead-click bug |
+| `d5a365f6` | `lib/session.ts` — new `requireDashboardAccess(handle)` helper |
+| `d56f5952` | `export/route.ts` now 403s without access (closes **B1**) |
+| `5f228e89` | `edit/orderActions.ts` gated; writes scoped by creator id |
+| `4e364060` | `edit/mediaActions.ts` gated; new `ownsLink` check |
+| `5f0196e3` | `edit/actions.ts` — every action gated, link writes scoped `.eq("creator_id", …)`; `subscribe()` left public on purpose |
+| `70aac9c3` | `users/actions.ts` — admin-only; cannot demote or delete your own account |
+| `df6478ee` | `collections/actions.ts` — admin for create/rename/delete, owner-or-admin to assign a page |
+| `0a19c982` | `memory/BUGS.md` rewritten: B1→F10, B2→F11, new F9/F12/F13, new B17–B19 |
+
+**F9 root cause (worth remembering).** `.landr-tapped` set `pointer-events: none !important` and was
+applied on `pointerdown`. The browser resolves a click target at pointer-*up*, so the tapped element
+was already out of hit-testing and its handler never ran — while focus had landed on it, so pressing
+Enter fired it. Introduced by `0630e185` (25 Aug), shipped live, and it also cost real link clicks on
+`/ava`. Fix: dim with opacity only on pointerdown; `pointer-events: none` moved to a `.landr-busy`
+class added from the click handler via `setTimeout(…, 0)`. Repeat taps are still swallowed.
+
+**Authorization sweep.** `users/actions.ts` was the worst hole — no check at all, so any signed-in
+model could create an admin account, change any password or role, delete accounts and reassign any
+page. `collections/actions.ts` was also unchecked. Separately, `saveIcon`, `removeIcon`,
+`uploadVideo`, `savePreview`, `updateLink`, `deleteLink`, `saveGeoRules` and `saveRotation` all wrote
+by **link id alone**, so any signed-in user could edit any link row by guessing an id. All now scoped.
+
+**Lesson recorded in `BUGS.md`:** route handlers and server actions never run a layout, so each one
+needs its own gate.
+
+**Proof status: CODE only.** There is no typecheck or CI (B14) and the Vercel result for these
+commits has not been inspected. Nothing here is LIVE-verified.
+
+Also settled this session, from the client's four reference screenshots (read as chat attachments):
+
+- **B13 closed.** The reference "New collection" dialog is just **Name + Redirect url**, with
+  "When someone from a blocked country visits your page, you can redirect them here." Nothing
+  per-platform. Reference Analytics has a **"Filter on collection"** dropdown. So a collection is a
+  group of pages + one optional redirect + an analytics filter; per-country destination swaps stay
+  **per link**. Ours has grouping and redirect; the analytics filter is missing.
+- FanplaceFinder is gone from the reference (moved to aicreatormarketplace.com) — nothing to build.
+- Reference Analytics confirms Mediums + Events tiles are expected (B12 stands).
+- Reference Users table: ID, Name, Email (verified tick), Role, Created At; no delete control visible.
+- The rachelfit email collector is a **fixed centred card** with First Name + Email pill fields —
+  answers half of the A24 sizing question.
+- Client's own editor screenshot shows crop reading real values (50% / 18% / 100%), so "crop reads 0"
+  is not reproducing here; awaiting confirmation.
+
+## 2026-09-26 (morning) — audit, benchmark recovery, memory system
 
 - Located the plan of record: the client supplied `project landr.zip` (24 step PDFs + 24 TEST
   checklists + guide, playbook, handoff, schema, July code snapshot). It had **never** existed in
@@ -16,7 +66,7 @@ Append one entry per working session, newest first. Always record commit SHAs.
   unauthenticated CSV export route (B1) and the unauthorized editor server actions (B2).
 - Confirmed no `utm/`, `qr/`, `schedule/`, `experiments/`, `broadcast/` routes and no consent
   banner, which settles Steps 14, 17, 18, 20, 21, 23, 24 as NOT STARTED.
-- Created this `memory/` system. **No application code changed.**
+- Created this `memory/` system. No application code changed in this block — see the afternoon entry.
 
 ## 2026-09-23 — verification pass
 
