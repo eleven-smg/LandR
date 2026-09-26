@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin"
 import { revalidatePath } from "next/cache"
 import { SECTION_KEYS, normalizeOrder } from "@/lib/sections"
 import { clampPercent, clampZoom, normalizeSubscribeStyle, normalizeTemplate } from "@/lib/templates"
+import { requireDashboardAccess } from "@/lib/session"
 
 type Social = { platform: string; url: string }
 
@@ -17,8 +18,32 @@ function refresh(handle: string) {
   revalidatePath("/dashboard/" + handle + "/edit")
 }
 
-async function readSocials(handle: string): Promise<Social[]> {
-  const { data } = await supabaseAdmin.from("creators").select("socials").eq("handle", handle).single()
+/**
+ * Everything below writes with the service role, which ignores row level
+ * security, so the only thing standing between a signed-in model and another
+ * model's page is this check. The handle in the form proves nothing; it is
+ * simply what the browser claims. requireDashboardAccess turns it into the
+ * creator row this account is actually allowed to touch, and the id it returns
+ * is the one used for writes and storage paths.
+ */
+async function accessFrom(formData: FormData) {
+  return requireDashboardAccess(String(formData.get("handle") || ""))
+}
+
+/** A link id says nothing about who owns it, so check the row first. */
+async function ownsLink(creatorId: string, id: string): Promise<boolean> {
+  if (!id) return false
+  const { data } = await supabaseAdmin
+    .from("links")
+    .select("id")
+    .eq("id", id)
+    .eq("creator_id", creatorId)
+    .maybeSingle()
+  return !!data
+}
+
+async function readSocials(creatorId: string): Promise<Social[]> {
+  const { data } = await supabaseAdmin.from("creators").select("socials").eq("id", creatorId).single()
   return Array.isArray(data?.socials) ? (data.socials as Social[]) : []
 }
 
@@ -59,7 +84,9 @@ async function replaceMedia(
 }
 
 export async function saveProfile(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
+  const access = await accessFrom(formData)
+  if (!access) return
+
   const display_name = String(formData.get("display_name") || "")
   const location = String(formData.get("location") || "")
   const tagline = String(formData.get("tagline") || "")
@@ -123,17 +150,23 @@ export async function saveProfile(formData: FormData) {
     patch.background_url = null
   }
 
-  await supabaseAdmin.from("creators").update(patch).eq("handle", handle)
-  refresh(handle)
+  await supabaseAdmin.from("creators").update(patch).eq("id", access.creator.id)
+  refresh(access.creator.handle)
 }
 
 export async function moveSection(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
+  const access = await accessFrom(formData)
+  if (!access) return
+
   const key = String(formData.get("key") || "")
   const direction = String(formData.get("direction") || "")
-  if (!handle || !SECTION_KEYS.includes(key)) return
+  if (!SECTION_KEYS.includes(key)) return
 
-  const { data } = await supabaseAdmin.from("creators").select("section_order").eq("handle", handle).single()
+  const { data } = await supabaseAdmin
+    .from("creators")
+    .select("section_order")
+    .eq("id", access.creator.id)
+    .single()
   const order = normalizeOrder(data?.section_order)
   const index = order.indexOf(key)
   const swapWith = direction === "up" ? index - 1 : index + 1
@@ -143,13 +176,14 @@ export async function moveSection(formData: FormData) {
   order[index] = order[swapWith]
   order[swapWith] = tmp
 
-  await supabaseAdmin.from("creators").update({ section_order: order.join(",") }).eq("handle", handle)
-  refresh(handle)
+  await supabaseAdmin.from("creators").update({ section_order: order.join(",") }).eq("id", access.creator.id)
+  refresh(access.creator.handle)
 }
 
 export async function uploadBackground(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
-  const creator_id = String(formData.get("creator_id") || "")
+  const access = await accessFrom(formData)
+  if (!access) return
+
   const kind = String(formData.get("kind") || "image")
   const file = formData.get("file")
 
@@ -160,7 +194,7 @@ export async function uploadBackground(formData: FormData) {
 
   const isVideo = kind === "video"
   const publicUrl = await replaceMedia(
-    creator_id,
+    access.creator.id,
     isVideo ? "bg-video" : "bg-image",
     blob,
     isVideo ? "mp4" : "jpg",
@@ -170,10 +204,15 @@ export async function uploadBackground(formData: FormData) {
 
   const patch: Record<string, unknown> = { background_type: kind }
   patch[isVideo ? "bg_video_url" : "bg_image_url"] = publicUrl
-  await supabaseAdmin.from("creators").update(patch).eq("handle", handle)
-  refresh(handle)
+  await supabaseAdmin.from("creators").update(patch).eq("id", access.creator.id)
+  refresh(access.creator.handle)
 }
 
+/**
+ * The one action here that is meant to be open: this is the visitor's subscribe
+ * form on the public page, so it must work with no session at all. It only ever
+ * inserts a subscriber row for the handle it was posted from.
+ */
 export async function subscribe(_prev: SubscribeState, formData: FormData): Promise<SubscribeState> {
   const handle = String(formData.get("handle") || "")
   const email = String(formData.get("email") || "").trim().toLowerCase()
@@ -203,34 +242,51 @@ export async function subscribe(_prev: SubscribeState, formData: FormData): Prom
 }
 
 export async function uploadVideo(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
-  const id = String(formData.get("id") || "")
-  const creator_id = String(formData.get("creator_id") || "")
-  const file = formData.get("video")
+  const access = await accessFrom(formData)
+  if (!access) return
 
+  const id = String(formData.get("id") || "")
+  if (!(await ownsLink(access.creator.id, id))) return
+
+  const file = formData.get("video")
   if (!file || typeof file === "string") return
   const blob = file as File
   if (blob.size === 0) return
   if (blob.size > MAX_UPLOAD_BYTES) return
 
-  const publicUrl = await replaceMedia(creator_id, "clip-" + id, blob, "mp4", "video/mp4")
+  const publicUrl = await replaceMedia(access.creator.id, "clip-" + id, blob, "mp4", "video/mp4")
   if (!publicUrl) return
 
-  await supabaseAdmin.from("links").update({ media_url: publicUrl }).eq("id", id)
-  refresh(handle)
+  await supabaseAdmin
+    .from("links")
+    .update({ media_url: publicUrl })
+    .eq("id", id)
+    .eq("creator_id", access.creator.id)
+  refresh(access.creator.handle)
 }
 
 export async function removeVideo(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
+  const access = await accessFrom(formData)
+  if (!access) return
+
   const id = String(formData.get("id") || "")
-  await supabaseAdmin.from("links").update({ media_url: null }).eq("id", id)
-  refresh(handle)
+  if (!(await ownsLink(access.creator.id, id))) return
+
+  await supabaseAdmin
+    .from("links")
+    .update({ media_url: null })
+    .eq("id", id)
+    .eq("creator_id", access.creator.id)
+  refresh(access.creator.handle)
 }
 
 export async function savePreview(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
+  const access = await accessFrom(formData)
+  if (!access) return
+
   const id = String(formData.get("id") || "")
-  const creator_id = String(formData.get("creator_id") || "")
+  if (!(await ownsLink(access.creator.id, id))) return
+
   const pastedUrl = String(formData.get("preview_url") || "").trim()
   const file = formData.get("preview_file")
 
@@ -240,7 +296,7 @@ export async function savePreview(formData: FormData) {
     const blob = file as File
     if (blob.size > 0) {
       if (blob.size > MAX_UPLOAD_BYTES) return
-      const uploaded = await replaceMedia(creator_id, "preview-" + id, blob, "jpg", "image/jpeg")
+      const uploaded = await replaceMedia(access.creator.id, "preview-" + id, blob, "jpg", "image/jpeg")
       if (!uploaded) return
       publicUrl = uploaded
     }
@@ -249,75 +305,106 @@ export async function savePreview(formData: FormData) {
   if (!publicUrl && pastedUrl) publicUrl = pastedUrl
   if (!publicUrl) return
 
-  await supabaseAdmin.from("links").update({ preview_image_url: publicUrl }).eq("id", id)
-  refresh(handle)
+  await supabaseAdmin
+    .from("links")
+    .update({ preview_image_url: publicUrl })
+    .eq("id", id)
+    .eq("creator_id", access.creator.id)
+  refresh(access.creator.handle)
 }
 
 export async function removePreview(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
+  const access = await accessFrom(formData)
+  if (!access) return
+
   const id = String(formData.get("id") || "")
-  await supabaseAdmin.from("links").update({ preview_image_url: null }).eq("id", id)
-  refresh(handle)
+  if (!(await ownsLink(access.creator.id, id))) return
+
+  await supabaseAdmin
+    .from("links")
+    .update({ preview_image_url: null })
+    .eq("id", id)
+    .eq("creator_id", access.creator.id)
+  refresh(access.creator.handle)
 }
 
 export async function saveLayout(handle: string, items: { id: string; size: string }[]) {
+  const access = await requireDashboardAccess(handle)
+  if (!access) return
+
+  // Scoped by creator_id as well as id, so a forged id in the list is a no-op
+  // instead of an edit to somebody else's link.
   for (let i = 0; i < items.length; i++) {
-    await supabaseAdmin.from("links").update({ position: i, size: items[i].size }).eq("id", items[i].id)
+    await supabaseAdmin
+      .from("links")
+      .update({ position: i, size: items[i].size })
+      .eq("id", items[i].id)
+      .eq("creator_id", access.creator.id)
   }
-  refresh(handle)
+  refresh(access.creator.handle)
 }
 
 export async function addSocial(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
+  const access = await accessFrom(formData)
+  if (!access) return
+
   const platform = String(formData.get("platform") || "").trim().toLowerCase()
   const url = String(formData.get("url") || "").trim()
   if (!platform || !url) return
-  const socials = await readSocials(handle)
+  const socials = await readSocials(access.creator.id)
   socials.push({ platform, url })
-  await supabaseAdmin.from("creators").update({ socials }).eq("handle", handle)
-  refresh(handle)
+  await supabaseAdmin.from("creators").update({ socials }).eq("id", access.creator.id)
+  refresh(access.creator.handle)
 }
 
 export async function updateSocial(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
+  const access = await accessFrom(formData)
+  if (!access) return
+
   const index = Number(formData.get("index"))
   const platform = String(formData.get("platform") || "").trim().toLowerCase()
   const url = String(formData.get("url") || "").trim()
-  const socials = await readSocials(handle)
+  const socials = await readSocials(access.creator.id)
   if (index < 0 || index >= socials.length) return
   socials[index] = { platform, url }
-  await supabaseAdmin.from("creators").update({ socials }).eq("handle", handle)
-  refresh(handle)
+  await supabaseAdmin.from("creators").update({ socials }).eq("id", access.creator.id)
+  refresh(access.creator.handle)
 }
 
 export async function deleteSocial(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
+  const access = await accessFrom(formData)
+  if (!access) return
+
   const index = Number(formData.get("index"))
-  const socials = await readSocials(handle)
+  const socials = await readSocials(access.creator.id)
   if (index < 0 || index >= socials.length) return
   socials.splice(index, 1)
-  await supabaseAdmin.from("creators").update({ socials }).eq("handle", handle)
-  refresh(handle)
+  await supabaseAdmin.from("creators").update({ socials }).eq("id", access.creator.id)
+  refresh(access.creator.handle)
 }
 
 export async function moveSocial(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
+  const access = await accessFrom(formData)
+  if (!access) return
+
   const index = Number(formData.get("index"))
   const direction = String(formData.get("direction") || "")
-  const socials = await readSocials(handle)
+  const socials = await readSocials(access.creator.id)
   const swapWith = direction === "up" ? index - 1 : index + 1
   if (index < 0 || index >= socials.length) return
   if (swapWith < 0 || swapWith >= socials.length) return
   const tmp = socials[index]
   socials[index] = socials[swapWith]
   socials[swapWith] = tmp
-  await supabaseAdmin.from("creators").update({ socials }).eq("handle", handle)
-  refresh(handle)
+  await supabaseAdmin.from("creators").update({ socials }).eq("id", access.creator.id)
+  refresh(access.creator.handle)
 }
 
 export async function addLink(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
-  const creator_id = String(formData.get("creator_id") || "")
+  const access = await accessFrom(formData)
+  if (!access) return
+
+  const creator_id = access.creator.id
   const label = String(formData.get("label") || "")
   const url = String(formData.get("url") || "")
   const type = String(formData.get("type") || "button")
@@ -340,12 +427,16 @@ export async function addLink(formData: FormData) {
     is_active: true,
   })
 
-  refresh(handle)
+  refresh(access.creator.handle)
 }
 
 export async function updateLink(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
+  const access = await accessFrom(formData)
+  if (!access) return
+
   const id = String(formData.get("id") || "")
+  if (!(await ownsLink(access.creator.id, id))) return
+
   const label = String(formData.get("label") || "")
   const url = String(formData.get("url") || "")
   const type = String(formData.get("type") || "button")
@@ -370,27 +461,33 @@ export async function updateLink(formData: FormData) {
       is_active,
     })
     .eq("id", id)
+    .eq("creator_id", access.creator.id)
 
-  refresh(handle)
+  refresh(access.creator.handle)
 }
 
 export async function deleteLink(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
+  const access = await accessFrom(formData)
+  if (!access) return
+
   const id = String(formData.get("id") || "")
-  await supabaseAdmin.from("links").delete().eq("id", id)
-  refresh(handle)
+  if (!(await ownsLink(access.creator.id, id))) return
+
+  await supabaseAdmin.from("links").delete().eq("id", id).eq("creator_id", access.creator.id)
+  refresh(access.creator.handle)
 }
 
 export async function moveLink(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
-  const creator_id = String(formData.get("creator_id") || "")
+  const access = await accessFrom(formData)
+  if (!access) return
+
   const id = String(formData.get("id") || "")
   const direction = String(formData.get("direction") || "")
 
   const { data: rows } = await supabaseAdmin
     .from("links")
     .select("id, position")
-    .eq("creator_id", creator_id)
+    .eq("creator_id", access.creator.id)
     .order("position", { ascending: true })
 
   if (!rows) return
@@ -406,12 +503,16 @@ export async function moveLink(formData: FormData) {
   await supabaseAdmin.from("links").update({ position: b.position }).eq("id", a.id)
   await supabaseAdmin.from("links").update({ position: a.position }).eq("id", b.id)
 
-  refresh(handle)
+  refresh(access.creator.handle)
 }
 
 export async function saveGeoRules(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
+  const access = await accessFrom(formData)
+  if (!access) return
+
   const id = String(formData.get("id") || "")
+  if (!(await ownsLink(access.creator.id, id))) return
+
   const raw = String(formData.get("geo_rules") || "")
   const rules: { countries: string[]; url: string }[] = []
   for (const line of raw.split(NL)) {
@@ -428,25 +529,39 @@ export async function saveGeoRules(formData: FormData) {
     if (countries.length === 0 || !url) continue
     rules.push({ countries, url })
   }
-  await supabaseAdmin.from("links").update({ geo_rules: rules }).eq("id", id)
-  refresh(handle)
+  await supabaseAdmin
+    .from("links")
+    .update({ geo_rules: rules })
+    .eq("id", id)
+    .eq("creator_id", access.creator.id)
+  refresh(access.creator.handle)
 }
 
 export async function saveRotation(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
+  const access = await accessFrom(formData)
+  if (!access) return
+
   const id = String(formData.get("id") || "")
+  if (!(await ownsLink(access.creator.id, id))) return
+
   const rotate = formData.get("rotate") === "on"
   const raw = String(formData.get("rotation_urls") || "")
   const urls = raw
     .split(NL)
     .map((u) => u.trim())
     .filter((u) => u.length > 0)
-  await supabaseAdmin.from("links").update({ rotate, rotation_urls: urls }).eq("id", id)
-  refresh(handle)
+  await supabaseAdmin
+    .from("links")
+    .update({ rotate, rotation_urls: urls })
+    .eq("id", id)
+    .eq("creator_id", access.creator.id)
+  refresh(access.creator.handle)
 }
 
 export async function saveBlockedCountries(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
+  const access = await accessFrom(formData)
+  if (!access) return
+
   const raw = String(formData.get("blocked_countries") || "")
   const redirectUrl = String(formData.get("blocked_redirect_url") || "").trim()
   const countries = raw
@@ -456,6 +571,6 @@ export async function saveBlockedCountries(formData: FormData) {
   await supabaseAdmin
     .from("creators")
     .update({ blocked_countries: countries, blocked_redirect_url: redirectUrl || null })
-    .eq("handle", handle)
-  refresh(handle)
+    .eq("id", access.creator.id)
+  refresh(access.creator.handle)
 }
