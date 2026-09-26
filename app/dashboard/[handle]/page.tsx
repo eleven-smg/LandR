@@ -2,6 +2,7 @@ import Link from "next/link"
 import type { CSSProperties } from "react"
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
 import { likeSafeHandle } from "@/lib/handles"
+import { requireDashboardAccess } from "@/lib/session"
 import BreakdownCard from "./BreakdownCard"
 import TrafficChart from "./TrafficChart"
 import type { Point } from "./TrafficChart"
@@ -44,6 +45,9 @@ const RANGES = [
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
+/** A collection with no pages must read as zero, not as this page's traffic. */
+const NO_MATCH = "00000000-0000-0000-0000-000000000000"
+
 const exportRow: CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }
 const exportBtn: CSSProperties = {
   display: "inline-block",
@@ -56,6 +60,17 @@ const exportBtn: CSSProperties = {
   fontWeight: 500,
   textDecoration: "none",
 }
+const selectBox: CSSProperties = {
+  padding: "6px 10px",
+  background: "#181c27",
+  border: "1px solid #232940",
+  borderRadius: 8,
+  color: "#fff",
+  fontSize: 12,
+  minWidth: 190,
+}
+const filterLabel: CSSProperties = { color: "#6b7396", fontSize: 12 }
+const filterNote: CSSProperties = { color: "#6b7396", fontSize: 11, marginTop: 6, marginBottom: 18 }
 const linkTable: CSSProperties = { marginTop: 4 }
 const linkHead: CSSProperties = {
   display: "flex",
@@ -191,7 +206,7 @@ export default async function AnalyticsPage({
   searchParams,
 }: {
   params: Promise<{ handle: string }>
-  searchParams: Promise<{ range?: string }>
+  searchParams: Promise<{ range?: string; collection?: string }>
 }) {
   const { handle } = await params
   const sp = await searchParams
@@ -216,6 +231,41 @@ export default async function AnalyticsPage({
     )
   }
 
+  // A collection spans pages that belong to other people, so widening these
+  // numbers past the handle in the address bar is an admin job. The dashboard
+  // layout has already checked that this account may see this page; this call
+  // only reads the role. A model who passes ?collection=... is ignored rather
+  // than refused, and still sees their own page.
+  const access = await requireDashboardAccess(creator.handle)
+  const canFilterByCollection = access?.account.role === "admin"
+
+  const collectionRes = canFilterByCollection
+    ? await supabaseAdmin.from("collections").select("id, name").order("created_at", { ascending: true })
+    : { data: null }
+
+  const collectionOptions = ((collectionRes.data || []) as Array<Record<string, unknown>>).map((c) => ({
+    id: String(c.id),
+    name: String(c.name || "Untitled collection"),
+  }))
+
+  const wanted = canFilterByCollection ? String(sp.collection || "") : ""
+  const collection = collectionOptions.find((c) => c.id === wanted) || null
+
+  let collectionPageCount = 0
+  let creatorIds: string[] = [creator.id]
+
+  if (collection) {
+    const { data: grouped } = await supabaseAdmin
+      .from("creators")
+      .select("id")
+      .eq("collection_id", collection.id)
+    const ids = ((grouped || []) as Array<Record<string, unknown>>).map((c) => String(c.id))
+    collectionPageCount = ids.length
+    creatorIds = ids.length > 0 ? ids : [NO_MATCH]
+  }
+
+  const keepCollection = collection ? "&collection=" + collection.id : ""
+
   const now = new Date()
   const span = range.days * 24 * 60 * 60 * 1000
   const since = new Date(now.getTime() - span)
@@ -227,34 +277,34 @@ export default async function AnalyticsPage({
       .select(
         "created_at, country, region, city, device, browser, os, referrer, source, path, visitor_id, session_id, duration_seconds, language, screen",
       )
-      .eq("creator_id", creator.id)
+      .in("creator_id", creatorIds)
       .gte("created_at", since.toISOString())
       .order("created_at", { ascending: true })
       .limit(20000),
     supabaseAdmin
       .from("page_views")
       .select("created_at, visitor_id")
-      .eq("creator_id", creator.id)
+      .in("creator_id", creatorIds)
       .gte("created_at", prevSince.toISOString())
       .lt("created_at", since.toISOString())
       .limit(20000),
     supabaseAdmin
       .from("link_clicks")
       .select("created_at, destination_url, link_id, session_id")
-      .eq("creator_id", creator.id)
+      .in("creator_id", creatorIds)
       .gte("created_at", since.toISOString())
       .limit(20000),
     supabaseAdmin
       .from("link_clicks")
       .select("created_at")
-      .eq("creator_id", creator.id)
+      .in("creator_id", creatorIds)
       .gte("created_at", prevSince.toISOString())
       .lt("created_at", since.toISOString())
       .limit(20000),
     supabaseAdmin
       .from("links")
       .select("id, label, url, is_active")
-      .eq("creator_id", creator.id)
+      .in("creator_id", creatorIds)
       .order("position", { ascending: true }),
   ])
 
@@ -450,10 +500,19 @@ export default async function AnalyticsPage({
       <div className="page-header">
         <div className="page-title">Welcome back {name}</div>
         <div className="page-sub">
-          Traffic for /{creator.handle} &mdash;{" "}
-          <Link className="dash-link" href={"/" + creator.handle}>
-            view public page &rarr;
-          </Link>
+          {collection ? (
+            <>
+              Traffic for the {collection.name} collection &mdash; {collectionPageCount} page
+              {collectionPageCount === 1 ? "" : "s"} added together
+            </>
+          ) : (
+            <>
+              Traffic for /{creator.handle} &mdash;{" "}
+              <Link className="dash-link" href={"/" + creator.handle}>
+                view public page &rarr;
+              </Link>
+            </>
+          )}
         </div>
       </div>
 
@@ -462,7 +521,7 @@ export default async function AnalyticsPage({
           {RANGES.map((r) => (
             <Link
               key={r.key}
-              href={"?range=" + r.key}
+              href={"?range=" + r.key + keepCollection}
               className={r.key === range.key ? "period-tab active" : "period-tab"}
             >
               {r.label}
@@ -473,6 +532,46 @@ export default async function AnalyticsPage({
           {fmtDate(since)} &ndash; {fmtDate(now)}
         </div>
       </div>
+
+      {canFilterByCollection ? (
+        <div>
+          <form method="get" style={{ ...exportRow, marginTop: 14 }}>
+            <input type="hidden" name="range" value={range.key} />
+            <label style={filterLabel} htmlFor="collection">
+              Filter on collection:
+            </label>
+            <select id="collection" name="collection" defaultValue={collection ? collection.id : ""} style={selectBox}>
+              <option value="">This page only (/{creator.handle})</option>
+              {collectionOptions.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <button type="submit" style={{ ...exportBtn, cursor: "pointer" }}>
+              Apply
+            </button>
+            {collection ? (
+              <a style={exportBtn} href={"?range=" + range.key}>
+                Clear
+              </a>
+            ) : null}
+          </form>
+          <div style={filterNote}>
+            {collectionOptions.length === 0
+              ? "No collections yet. Create one on the Collections tab to compare a group of pages here."
+              : collection
+                ? collectionPageCount === 0
+                  ? "No pages are in this collection yet, so every figure below reads zero."
+                  : "Every figure below covers all " +
+                    collectionPageCount +
+                    " pages in this collection. CSV downloads still cover /" +
+                    creator.handle +
+                    " only."
+                : "Only admins can widen these numbers to a whole collection."}
+          </div>
+        </div>
+      ) : null}
 
       <div style={{ ...exportRow, marginBottom: 18 }}>
         <span style={{ color: "#6b7396", fontSize: 12 }}>Download this {range.label.toLowerCase()}:</span>
@@ -572,6 +671,7 @@ export default async function AnalyticsPage({
             ))}
             <div className="stat-note" style={{ marginTop: 10 }}>
               Click rate is that button&rsquo;s clicks divided by the {views.length} page views in this range.
+              {collection ? " Buttons from every page in the collection are listed together." : ""}
               {untracked > 0
                 ? " " + untracked + " older clicks were logged before per-button tracking and are not counted here."
                 : ""}

@@ -41,7 +41,10 @@ export default async function CollectionsPage({ params }: { params: Promise<{ ha
     <div style={wrap}>
       <div style={head}>
         <div style={title}>Collections</div>
-        <div style={sub}>Group your pages, then reuse one redirect for every page in the group</div>
+        <div style={sub}>
+          Group your pages so you can read their traffic together on Analytics, and give the whole group one
+          optional destination for visitors from flagged countries
+        </div>
       </div>
       <CollectionsUI handle={handle} collections={rows} pages={pages} />
     </div>
