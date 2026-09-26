@@ -2,8 +2,8 @@ import Link from "next/link"
 import type { CSSProperties } from "react"
 
 export const metadata = {
-  title: "Lander — one link for everything you share",
-  description: "Build a link in bio page with smart routing, geoblocking, link rotation and real analytics.",
+  title: "LandR — one link for everything you share",
+  description: "Build a link in bio page with country rules, link rotation, collections and real analytics.",
 }
 
 const page: CSSProperties = { minHeight: "100vh", background: "#0b0d13", color: "#e8ecf5" }
@@ -62,10 +62,13 @@ const foot: CSSProperties = {
   fontSize: 12,
 }
 
+// Wording note: nothing here may promise that visitors are blocked. Flagging a
+// country changes where a button sends that country; the visitor still sees the
+// normal page unless a redirect is deliberately switched on.
 const FEATURES = [
   {
-    title: "Country routing",
-    body: "Send visitors from one country to a different destination, or block them and redirect the whole group at once.",
+    title: "Country rules",
+    body: "Flag the countries you want treated differently and point individual buttons somewhere else for them. They still land on your normal page, and any link without a rule behaves the same for everybody.",
   },
   {
     title: "Link rotation",
@@ -81,11 +84,11 @@ const FEATURES = [
   },
   {
     title: "Collections",
-    body: "Group pages so a whole roster shares one redirect instead of configuring every page by hand.",
+    body: "Group your own pages into one campaign: set a destination once and every matching button across the group uses it, and read the whole group together in Analytics.",
   },
   {
     title: "Your own look",
-    body: "Photo or video backgrounds, three page templates, custom button colours, shapes, icons and ordering.",
+    body: "Photo or video backgrounds, four page templates, custom button colours, shapes, icons and ordering.",
   },
 ]
 
@@ -95,7 +98,7 @@ export default function Home() {
       <nav style={nav}>
         <span style={brand}>
           <span style={dot} />
-          Lander
+          LandR
         </span>
         <span style={navLinks}>
           <Link href="/signin" style={ghostLink}>
@@ -132,7 +135,7 @@ export default function Home() {
         ))}
       </section>
 
-      <footer style={foot}>Lander</footer>
+      <footer style={foot}>LandR</footer>
     </main>
   )
 }
