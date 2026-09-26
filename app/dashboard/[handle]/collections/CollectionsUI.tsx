@@ -93,6 +93,7 @@ const closeX: CSSProperties = {
 }
 const modalActions: CSSProperties = { display: "flex", gap: 10, marginTop: 18 }
 const hint: CSSProperties = { color: "#6b7396", fontSize: 11, marginTop: 8 }
+const fieldHint: CSSProperties = { color: "#6b7396", fontSize: 11, marginTop: -8, marginBottom: 14 }
 const full: CSSProperties = { ...input, width: "100%", marginTop: 6, marginBottom: 14 }
 const sectionTitle: CSSProperties = { fontSize: 15, fontWeight: 600, marginBottom: 10, marginTop: 26 }
 const pageRow: CSSProperties = {
@@ -158,9 +159,12 @@ export default function CollectionsUI({
                 <input style={full} name="name" defaultValue={c.name} />
               </label>
               <label style={lbl}>
-                Redirect URL
+                Redirect url (optional)
                 <input style={full} name="redirect_url" defaultValue={c.redirectUrl} placeholder="https://example.com/redirect" />
               </label>
+              <p style={fieldHint}>
+                Leave this empty to keep every page in the group behaving normally.
+              </p>
               <div style={modalActions}>
                 <button style={primary} type="submit">
                   Save collection
@@ -191,8 +195,8 @@ export default function CollectionsUI({
               </div>
               <p style={hint}>
                 {c.redirectUrl
-                  ? "Blocked visitors go to " + c.redirectUrl
-                  : "No redirect set, blocked visitors see the block screen."}
+                  ? "Visitors from flagged countries go to " + c.redirectUrl
+                  : "No redirect set, so flagged visitors see the normal page."}
               </p>
             </div>
           )}
@@ -223,6 +227,10 @@ export default function CollectionsUI({
           </form>
         ))}
       </div>
+      <p style={hint}>
+        Once a page is in a collection, Analytics can add the whole group together with its &ldquo;Filter on
+        collection&rdquo; dropdown.
+      </p>
 
       {open ? (
         <div style={overlay}>
@@ -238,11 +246,12 @@ export default function CollectionsUI({
               <input style={full} name="name" placeholder="My collection" />
             </label>
             <label style={lbl}>
-              Redirect URL
+              Redirect url (optional)
               <input style={full} name="redirect_url" placeholder="https://example.com/redirect" />
             </label>
             <p style={hint}>
-              When someone from a blocked country visits a page in this collection, you can redirect them here.
+              When someone from a flagged country visits a page in this collection, you can send them here
+              instead. Leave it empty and those visitors see the normal page.
             </p>
             <div style={modalActions}>
               <button type="button" style={ghost} onClick={() => setOpen(false)}>
