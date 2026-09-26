@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
+import { requireDashboardAccess } from "@/lib/session"
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 const BUCKET = "media"
@@ -23,6 +24,21 @@ function extOf(name: string, fallback: string) {
   const dot = name.lastIndexOf(".")
   const ext = dot > -1 ? name.slice(dot + 1).toLowerCase().replace(/[^a-z0-9]/g, "") : ""
   return ext.length > 0 && ext.length <= 5 ? ext : fallback
+}
+
+/**
+ * A link id on its own says nothing about who owns it, so every action that
+ * edits one row by id confirms the row sits under this creator first.
+ */
+async function ownsLink(creatorId: string, id: string): Promise<boolean> {
+  if (!id) return false
+  const { data } = await supabaseAdmin
+    .from("links")
+    .select("id")
+    .eq("id", id)
+    .eq("creator_id", creatorId)
+    .maybeSingle()
+  return !!data
 }
 
 /**
@@ -54,63 +70,71 @@ async function replaceMedia(creatorId: string, prefix: string, file: File, fallb
 }
 
 export async function saveAvatar(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
-  const creatorId = String(formData.get("creator_id") || "")
+  const access = await requireDashboardAccess(String(formData.get("handle") || ""))
+  if (!access) return
+
   const pasted = String(formData.get("photo_url") || "").trim()
   const file = fileFrom(formData.get("photo_file"))
 
-  if (!handle) return
-
+  // The creator id comes from the session lookup, never from the form, so the
+  // upload cannot be aimed at another model's folder.
   let photo = pasted
-  if (file) photo = await replaceMedia(creatorId, "avatar", file, "jpg")
+  if (file) photo = await replaceMedia(access.creator.id, "avatar", file, "jpg")
   if (!photo) return
 
-  await supabaseAdmin.from("creators").update({ photo_url: photo }).eq("handle", handle)
-  refresh(handle)
+  await supabaseAdmin.from("creators").update({ photo_url: photo }).eq("id", access.creator.id)
+  refresh(access.creator.handle)
 }
 
 export async function removeAvatar(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
-  if (!handle) return
-  await supabaseAdmin.from("creators").update({ photo_url: null }).eq("handle", handle)
-  refresh(handle)
+  const access = await requireDashboardAccess(String(formData.get("handle") || ""))
+  if (!access) return
+
+  await supabaseAdmin.from("creators").update({ photo_url: null }).eq("id", access.creator.id)
+  refresh(access.creator.handle)
 }
 
 export async function saveIcon(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
+  const access = await requireDashboardAccess(String(formData.get("handle") || ""))
+  if (!access) return
+
   const id = String(formData.get("id") || "")
-  const creatorId = String(formData.get("creator_id") || "")
+  if (!(await ownsLink(access.creator.id, id))) return
+
   const pasted = String(formData.get("icon_url") || "").trim()
   const file = fileFrom(formData.get("icon_file"))
 
-  if (!handle || !id) return
-
   let icon = pasted
-  if (file) icon = await replaceMedia(creatorId, "icon-" + id, file, "png")
+  if (file) icon = await replaceMedia(access.creator.id, "icon-" + id, file, "png")
   if (!icon) return
 
-  await supabaseAdmin.from("links").update({ icon }).eq("id", id)
-  refresh(handle)
+  await supabaseAdmin.from("links").update({ icon }).eq("id", id).eq("creator_id", access.creator.id)
+  refresh(access.creator.handle)
 }
 
 export async function removeIcon(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
+  const access = await requireDashboardAccess(String(formData.get("handle") || ""))
+  if (!access) return
+
   const id = String(formData.get("id") || "")
-  if (!handle || !id) return
-  await supabaseAdmin.from("links").update({ icon: null }).eq("id", id)
-  refresh(handle)
+  if (!(await ownsLink(access.creator.id, id))) return
+
+  await supabaseAdmin.from("links").update({ icon: null }).eq("id", id).eq("creator_id", access.creator.id)
+  refresh(access.creator.handle)
 }
 
 export async function addLinkFull(formData: FormData) {
-  const handle = String(formData.get("handle") || "")
-  const creatorId = String(formData.get("creator_id") || "")
+  const access = await requireDashboardAccess(String(formData.get("handle") || ""))
+  if (!access) return
+
+  const creatorId = access.creator.id
   const label = String(formData.get("label") || "").trim()
   const url = String(formData.get("url") || "").trim()
   const type = String(formData.get("type") || "button")
   const pasted = String(formData.get("icon_url") || "").trim()
   const file = fileFrom(formData.get("icon_file"))
 
-  if (!handle || !creatorId || !label) return
+  if (!label) return
 
   const { data: last } = await supabaseAdmin
     .from("links")
@@ -144,5 +168,5 @@ export async function addLinkFull(formData: FormData) {
     if (icon) await supabaseAdmin.from("links").update({ icon }).eq("id", created.id)
   }
 
-  refresh(handle)
+  refresh(access.creator.handle)
 }
