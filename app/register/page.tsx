@@ -10,6 +10,9 @@ const ERRORS: Record<string, string> = {
   handle: "That page name is taken or not allowed. Try another.",
   email: "An account already exists for that email.",
   failed: "Something went wrong creating the account. Please try again.",
+  // Every refusal needs a message. A bounce back to an empty form reads as a
+  // broken button, which is how a rate limit turns into a support question.
+  limit: "Too many pages have been created from this connection. Try again later, or ask an admin to add your page for you.",
 }
 
 const page: CSSProperties = {

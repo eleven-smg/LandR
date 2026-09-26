@@ -5,6 +5,7 @@ import { redirect } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
 import { SESSION_COOKIE } from "@/lib/session"
 import { likeSafeHandle, normalizeHandle, handleProblem } from "@/lib/handles"
+import { checkSignupLimit, recordSignup } from "@/lib/signupLimit"
 
 const THIRTY_DAYS = 60 * 60 * 24 * 30
 
@@ -20,6 +21,12 @@ export async function register(formData: FormData) {
   if (!email || !password || !handle) redirect("/register?error=missing")
   if (password.length < 6) redirect("/register?error=short")
   if (handleProblem(handle)) redirect("/register?error=handle")
+
+  // Rate limit before touching the database with anything expensive. This route
+  // creates an account AND a public page per call, so an unlimited endpoint is
+  // an open invitation (B9 / Step 22).
+  const limit = await checkSignupLimit()
+  if (!limit.allowed) redirect("/register?error=limit")
 
   const { data: takenHandle } = await supabaseAdmin
     .from("creators")
@@ -62,6 +69,10 @@ export async function register(formData: FormData) {
     await supabaseAdmin.from("accounts").delete().eq("id", account.id)
     redirect("/register?error=failed")
   }
+
+  // Only completed signups are counted, so a bounced attempt costs the visitor
+  // nothing. This is also the only writer of signup_log.
+  await recordSignup(limit.ip, handle)
 
   const store = await cookies()
   store.set(SESSION_COOKIE, String(account.id), {
