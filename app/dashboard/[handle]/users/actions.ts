@@ -20,6 +20,13 @@ async function requireAdmin(formData: FormData) {
   return access
 }
 
+const ROLES = ["admin", "model", "creator"]
+
+function cleanRole(value: unknown): string {
+  const role = String(value || "model")
+  return ROLES.includes(role) ? role : "model"
+}
+
 export async function addAccount(formData: FormData) {
   const access = await requireAdmin(formData)
   if (!access) return
@@ -27,7 +34,7 @@ export async function addAccount(formData: FormData) {
   const email = String(formData.get("email") || "").trim().toLowerCase()
   const name = String(formData.get("name") || "").trim()
   const password = String(formData.get("password") || "")
-  const role = String(formData.get("role") || "model") === "admin" ? "admin" : "model"
+  const role = cleanRole(formData.get("role"))
   if (!email || !password) return
 
   await supabaseAdmin.from("accounts").insert({ email, name: name || null, password, role })
@@ -41,7 +48,7 @@ export async function updateAccount(formData: FormData) {
   const id = String(formData.get("id") || "")
   const name = String(formData.get("name") || "").trim()
   const password = String(formData.get("password") || "")
-  const role = String(formData.get("role") || "model") === "admin" ? "admin" : "model"
+  const role = cleanRole(formData.get("role"))
   if (!id || !password) return
 
   // Locking yourself out by saving your own row as a model is a one-way trip,
@@ -50,6 +57,30 @@ export async function updateAccount(formData: FormData) {
   if (id !== access.account.id) patch.role = role
 
   await supabaseAdmin.from("accounts").update(patch).eq("id", id)
+  refresh(access.creator.handle)
+}
+
+/**
+ * The one account-editing action that is not admin-only: your own name and
+ * password. It is scoped to the signed-in account id, so the form cannot name
+ * somebody else's row, and it deliberately cannot touch `role` or `email` --
+ * those are still the admin's job.
+ */
+export async function updateOwnLogin(formData: FormData) {
+  const access = await requireDashboardAccess(String(formData.get("handle") || ""))
+  if (!access) return
+
+  const name = String(formData.get("name") || "").trim()
+  const password = String(formData.get("password") || "")
+
+  const patch: Record<string, unknown> = { name: name || null }
+  // An empty box means "leave it alone" rather than "blank my password".
+  if (password) {
+    if (password.length < 6) return
+    patch.password = password
+  }
+
+  await supabaseAdmin.from("accounts").update(patch).eq("id", access.account.id)
   refresh(access.creator.handle)
 }
 
