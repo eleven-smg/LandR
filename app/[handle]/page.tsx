@@ -9,6 +9,7 @@ import Tracker from "./Tracker"
 import { normalizeOrder } from "@/lib/sections"
 import { likeSafeHandle } from "@/lib/handles"
 import { loadCollectionSettings, safeExternalUrl } from "@/lib/collections"
+import { isLinkLive } from "@/lib/schedule"
 import { clampPercent, clampZoom, normalizeSubscribeStyle, normalizeTemplate } from "@/lib/templates"
 
 export const dynamic = "force-dynamic"
@@ -26,6 +27,8 @@ type LinkRow = {
   color: string | null
   media_url: string | null
   preview_image_url: string | null
+  starts_at: string | null
+  ends_at: string | null
   destinations: Destination[]
 }
 
@@ -152,7 +155,13 @@ export default async function CreatorPage({
     .eq("is_active", true)
     .order("position", { ascending: true })
 
-  const rows = (links || []) as LinkRow[]
+  // Step 19: a link outside its own schedule is not on the page at all, for
+  // buttons, videos and embeds alike. Both bounds are optional and every row
+  // today has neither, so nothing moves until a date is set. Preview keeps
+  // showing everything, so a drop can be laid out before it goes live without
+  // the button vanishing while it is being arranged.
+  const now = Date.now()
+  const rows = ((links || []) as LinkRow[]).filter((l) => isPreview || isLinkLive(l, now))
   const buttons = rows.filter((l) => l.type !== "embed" && l.type !== "video")
   const videos = rows.filter((l) => l.type === "video" && !!l.media_url)
   const embeds = rows
