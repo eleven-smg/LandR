@@ -3,6 +3,7 @@ import type { CSSProperties } from "react"
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
 import { likeSafeHandle } from "@/lib/handles"
 import { requireDashboardAccess } from "@/lib/session"
+import { resolveCollectionScope } from "@/lib/collectionScope"
 import BreakdownCard from "./BreakdownCard"
 import TrafficChart from "./TrafficChart"
 import type { Point } from "./TrafficChart"
@@ -44,9 +45,6 @@ const RANGES = [
 ]
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-
-/** A collection with no pages you manage must read as zero, not as this page. */
-const NO_MATCH = "00000000-0000-0000-0000-000000000000"
 
 const exportRow: CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }
 const exportBtn: CSSProperties = {
@@ -193,7 +191,7 @@ function changePct(now: number, before: number) {
 
 function Change({ value }: { value: number }) {
   const down = value < 0
-  const arrow = down ? "\u2193" : "\u2191"
+  const arrow = down ? "\\u2193" : "\\u2191"
   return (
     <div className={down ? "stat-change down" : "stat-change"}>
       {arrow} {Math.abs(value)}%
@@ -231,37 +229,24 @@ export default async function AnalyticsPage({
     )
   }
 
-  // A collection is the page owner's own grouping of their own pages — a
-  // campaign folder, not an admin tool — so the filter is open to anyone who
-  // can already open this dashboard. It still never shows more than the viewer
-  // is allowed to see: an account that manages every page gets every page in
-  // the collection, anyone else gets only the pages assigned to their account.
+  // Two gates, both owned elsewhere so they cannot drift: this page decides
+  // whether the login may read /handle at all, and lib/collectionScope decides
+  // which collections that login may even see. The filter used to list every
+  // collection in the workspace, so one agency read another's campaign names.
   const access = await requireDashboardAccess(creator.handle)
-  const seesEveryPage = access?.account.role === "admin"
 
-  const collectionRes = access
-    ? await supabaseAdmin.from("collections").select("id, name").order("created_at", { ascending: true })
-    : { data: null }
+  const scope = access
+    ? await resolveCollectionScope({
+        account: access.account,
+        fallbackCreatorId: creator.id,
+        wanted: sp.collection,
+      })
+    : null
 
-  const collectionOptions = ((collectionRes.data || []) as Array<Record<string, unknown>>).map((c) => ({
-    id: String(c.id),
-    name: String(c.name || "Untitled collection"),
-  }))
-
-  const wanted = access ? String(sp.collection || "") : ""
-  const collection = collectionOptions.find((c) => c.id === wanted) || null
-
-  let collectionPageCount = 0
-  let creatorIds: string[] = [creator.id]
-
-  if (collection && access) {
-    let grouped = supabaseAdmin.from("creators").select("id").eq("collection_id", collection.id)
-    if (!seesEveryPage) grouped = grouped.eq("account_id", access.account.id)
-    const { data: groupedData } = await grouped
-    const ids = ((groupedData || []) as Array<Record<string, unknown>>).map((c) => String(c.id))
-    collectionPageCount = ids.length
-    creatorIds = ids.length > 0 ? ids : [NO_MATCH]
-  }
+  const collectionOptions = scope ? scope.options : []
+  const collection = scope ? scope.selected : null
+  const collectionPageCount = scope ? scope.pageCount : 0
+  const creatorIds = scope ? scope.creatorIds : [creator.id]
 
   const keepCollection = collection ? "&collection=" + collection.id : ""
 
@@ -492,7 +477,10 @@ export default async function AnalyticsPage({
 
   const name = creator.display_name || creator.handle
   const noSessions = sessionCount === 0
-  const exportBase = "/dashboard/" + creator.handle + "/export?range=" + range.key + "&what="
+  // The collection travels with the download, so a CSV taken from a filtered
+  // screen holds the same pages the screen is showing.
+  const exportBase =
+    "/dashboard/" + creator.handle + "/export?range=" + range.key + keepCollection + "&what="
 
   return (
     <div>
@@ -563,9 +551,7 @@ export default async function AnalyticsPage({
                 ? "No pages in this collection yet, so every figure below reads zero."
                 : "Every figure below covers all " +
                   collectionPageCount +
-                  " pages in this collection. CSV downloads still cover /" +
-                  creator.handle +
-                  " only."
+                  " pages in this collection, and the CSV downloads follow the same filter."
               : "Group pages into a collection to read a whole campaign together."}
         </div>
       </div>
