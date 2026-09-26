@@ -2,7 +2,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin"
 import { getSession } from "@/lib/session"
 import { signOut } from "@/app/signin/actions"
 import type { CSSProperties } from "react"
-import { addAccount, updateAccount, deleteAccount, assignPage } from "./actions"
+import { addAccount, updateAccount, deleteAccount, assignPage, deletePage } from "./actions"
 
 export const dynamic = "force-dynamic"
 
@@ -57,10 +57,20 @@ const ghost: CSSProperties = {
 }
 const danger: CSSProperties = { ...ghost, color: "#f87171" }
 const hint: CSSProperties = { color: "#6b7396", fontSize: 11, marginTop: 10 }
+const rowNote: CSSProperties = { color: "#6b7396", fontSize: 11 }
 const warn: CSSProperties = {
   background: "rgba(250,204,21,0.10)",
   border: "1px solid rgba(250,204,21,0.30)",
   color: "#facc15",
+  borderRadius: 8,
+  padding: "9px 11px",
+  fontSize: 12,
+  marginBottom: 14,
+}
+const alarm: CSSProperties = {
+  background: "rgba(248,113,113,0.10)",
+  border: "1px solid rgba(248,113,113,0.30)",
+  color: "#f87171",
   borderRadius: 8,
   padding: "9px 11px",
   fontSize: 12,
@@ -87,6 +97,10 @@ export default async function UsersPage({ params }: { params: Promise<{ handle: 
 
   const rows = accounts || []
   const pages = creators || []
+
+  const emailById = new Map<string, string>(
+    rows.map((a: Record<string, unknown>) => [String(a.id), String(a.email || "")]),
+  )
 
   return (
     <div style={wrap}>
@@ -205,6 +219,49 @@ export default async function UsersPage({ params }: { params: Promise<{ handle: 
           </form>
         ))}
         <p style={hint}>Deleting an account leaves its pages in place and simply marks them unassigned.</p>
+      </div>
+
+      <div style={card}>
+        <h2 style={h2s}>Delete a page</h2>
+        <div style={alarm}>
+          Deleting a page also deletes its links, its views and clicks, and its email subscribers. There is no undo.
+          Photos and videos already uploaded stay in storage.
+        </div>
+        {pages.length === 0 ? <p style={hint}>No pages yet.</p> : null}
+        {pages.map((p: Record<string, unknown>) => {
+          const pageHandle = String(p.handle || "")
+          const owner = p.account_id ? emailById.get(String(p.account_id)) || "" : ""
+          const isCurrent = pageHandle.toLowerCase() === handle.toLowerCase()
+          return (
+            <form key={String(p.id)} action={deletePage} style={pageRow}>
+              <input type="hidden" name="handle" value={handle} />
+              <input type="hidden" name="page_id" value={String(p.id)} />
+              <span style={pageName}>
+                {String(p.display_name || p.handle)} <span style={{ color: "#6b7396" }}>/{pageHandle}</span>
+                <span style={rowNote}> {owner ? "\u2014 " + owner : "\u2014 unassigned"}</span>
+              </span>
+              {isCurrent ? (
+                <span style={rowNote}>This is the dashboard you are in. Delete it from another page.</span>
+              ) : (
+                <>
+                  <input
+                    style={{ ...input, width: 180 }}
+                    name="confirm_handle"
+                    placeholder={"type " + pageHandle + " to confirm"}
+                    autoComplete="off"
+                  />
+                  <button style={danger} type="submit">
+                    Delete page
+                  </button>
+                </>
+              )}
+            </form>
+          )
+        })}
+        <p style={hint}>
+          The handle has to match the page being deleted, so nothing happens if the box is empty or misspelled. Use this
+          to clear out duplicate or test pages.
+        </p>
       </div>
     </div>
   )

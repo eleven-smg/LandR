@@ -81,3 +81,53 @@ export async function assignPage(formData: FormData) {
     .eq("id", pageId)
   refresh(access.creator.handle)
 }
+
+/**
+ * Deletes a page and everything hanging off it. This is the one destructive
+ * action in the app that cannot be undone from the UI, so the admin has to
+ * type the handle and it has to match the row being deleted. A stray click,
+ * a stale page id or a mistyped handle all end as a no-op.
+ */
+export async function deletePage(formData: FormData) {
+  const access = await requireAdmin(formData)
+  if (!access) return
+
+  const pageId = String(formData.get("page_id") || "")
+  const typed = String(formData.get("confirm_handle") || "")
+    .trim()
+    .replace(/^\//, "")
+    .toLowerCase()
+  if (!pageId || !typed) return
+
+  const { data: targetData } = await supabaseAdmin
+    .from("creators")
+    .select("id, handle")
+    .eq("id", pageId)
+    .maybeSingle()
+
+  const target = targetData as { id: string; handle: string | null } | null
+  if (!target) return
+
+  const targetHandle = String(target.handle || "")
+  // The typed handle is the whole safety net, so a mismatch stops here.
+  if (!targetHandle || targetHandle.toLowerCase() !== typed) return
+  // Deleting the page named in the address bar would pull the dashboard out
+  // from under the click, so that one has to be deleted from elsewhere.
+  if (String(target.id) === access.creator.id) return
+
+  // sql/schema.sql declares "on delete cascade" on all four child tables, but
+  // this database has been patched by hand more than once, so the children go
+  // first. Child-first order is correct whether or not the cascade is really
+  // there, and it leaves nothing orphaned if one statement fails.
+  await supabaseAdmin.from("link_clicks").delete().eq("creator_id", pageId)
+  await supabaseAdmin.from("page_views").delete().eq("creator_id", pageId)
+  await supabaseAdmin.from("subscribers").delete().eq("creator_id", pageId)
+  await supabaseAdmin.from("links").delete().eq("creator_id", pageId)
+  await supabaseAdmin.from("creators").delete().eq("id", pageId)
+
+  // Files already uploaded to the media bucket are left alone on purpose:
+  // several pages can point at the same upload.
+  revalidatePath("/" + targetHandle)
+  revalidatePath("/dashboard/" + access.creator.handle + "/collections")
+  refresh(access.creator.handle)
+}
