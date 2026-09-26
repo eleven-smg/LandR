@@ -31,8 +31,8 @@ function send(body: string, filename: string) {
 
 /**
  * Downloads the numbers behind the analytics page so the agency can keep its own
- * records or hand a spreadsheet to a model. Three shapes: raw views, raw clicks,
- * and one row per link with its click rate.
+ * records or hand a spreadsheet to a model. Four shapes: raw views, raw clicks,
+ * one row per link with its click rate, and the email subscriber list.
  *
  * This is visitor data, including cities and visitor ids, so the request has to
  * prove itself. A route handler does not pass through the dashboard layout, so
@@ -71,7 +71,46 @@ export async function GET(request: Request, { params }: { params: Promise<{ hand
   const pageOf = (id: unknown) => handles[String(id || "")] || ""
 
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
-  const stamp = (grouped ? creator.handle + "-collection" : creator.handle) + "-" + rangeKey
+  const scoped = grouped ? creator.handle + "-collection" : creator.handle
+  const stamp = scoped + "-" + rangeKey
+
+  /**
+   * The subscriber list is a mailing list, not a traffic report, so it
+   * deliberately ignores the date tabs. Cutting "the subscribers" down to the
+   * last seven days without saying so would hand the client a partial list that
+   * looks complete -- the same quiet-wrong-answer class of bug as the export
+   * that used to ignore the collection filter. The filename carries no range
+   * for that reason.
+   *
+   * Unsubscribes are exported rather than hidden, and marked, so whoever mails
+   * the list can see who opted out instead of discovering it the hard way.
+   */
+  if (what === "subscribers") {
+    const { data } = await supabaseAdmin
+      .from("subscribers")
+      .select("created_at, creator_id, handle, email, unsubscribed_at")
+      .in("creator_id", creatorIds)
+      .order("created_at", { ascending: true })
+      .limit(20000)
+
+    const rows = (data || []) as Array<Record<string, unknown>>
+    const header = ["Email", "Signed up", "Status", "Unsubscribed"]
+    const body = csv(
+      grouped ? ["Page", ...header] : header,
+      rows.map((r) => {
+        const line = [
+          r.email,
+          r.created_at,
+          r.unsubscribed_at ? "unsubscribed" : "subscribed",
+          r.unsubscribed_at,
+        ]
+        // creator_id is the source of truth. The stored handle is only a
+        // fallback for rows written before a page was renamed.
+        return grouped ? [pageOf(r.creator_id) || String(r.handle || ""), ...line] : line
+      }),
+    )
+    return send(body, "landr-subscribers-" + scoped + ".csv")
+  }
 
   if (what === "clicks") {
     const { data } = await supabaseAdmin

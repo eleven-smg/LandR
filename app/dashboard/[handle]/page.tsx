@@ -557,7 +557,7 @@ export default async function AnalyticsPage({
         </div>
       </div>
 
-      <div style={{ ...exportRow, marginBottom: 18 }}>
+      <div style={{ ...exportRow, marginBottom: 6 }}>
         <span style={{ color: "#6b7396", fontSize: 12 }}>Download this {range.label.toLowerCase()}:</span>
         <a style={exportBtn} href={exportBase + "views"} download>
           Views CSV
@@ -568,6 +568,14 @@ export default async function AnalyticsPage({
         <a style={exportBtn} href={exportBase + "links"} download>
           Per-link CSV
         </a>
+        <span style={{ color: "#6b7396", fontSize: 12 }}>and the mailing list:</span>
+        <a style={exportBtn} href={exportBase + "subscribers"} download>
+          Subscribers CSV
+        </a>
+      </div>
+      <div style={{ ...filterNote, marginTop: 0 }}>
+        The subscribers download is every address ever collected, not just this{" "}
+        {range.label.toLowerCase()} &mdash; unsubscribes are included and marked.
       </div>
 
       <div className="stats-grid">
