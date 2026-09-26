@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
 import { requireDashboardAccess } from "@/lib/session"
+import { handlesByCreatorId, resolveCollectionScope } from "@/lib/collectionScope"
 
 export const dynamic = "force-dynamic"
 
@@ -36,12 +37,18 @@ function send(body: string, filename: string) {
  * This is visitor data, including cities and visitor ids, so the request has to
  * prove itself. A route handler does not pass through the dashboard layout, so
  * the ownership check has to happen here.
+ *
+ * The collection filter on the analytics page is honoured here too. It used to
+ * be dropped, so a CSV downloaded while reading a whole campaign quietly held
+ * one page. The collection id is resolved through the same helper the page
+ * uses, so it can only widen the export to pages this account may already read.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ handle: string }> }) {
   const { handle } = await params
   const url = new URL(request.url)
   const rangeKey = String(url.searchParams.get("range") || "week")
   const what = String(url.searchParams.get("what") || "views")
+  const wantedCollection = String(url.searchParams.get("collection") || "")
   const days = RANGE_DAYS[rangeKey] || 7
 
   // Signed out, wrong owner and no such page all answer the same way, so this
@@ -51,50 +58,66 @@ export async function GET(request: Request, { params }: { params: Promise<{ hand
 
   const creator = access.creator
 
+  const scope = await resolveCollectionScope({
+    account: access.account,
+    fallbackCreatorId: creator.id,
+    wanted: wantedCollection,
+  })
+
+  const creatorIds = scope.creatorIds
+  // More than one page can be in the file, so each row says which page it is.
+  const grouped = scope.selected !== null
+  const handles = grouped ? await handlesByCreatorId(creatorIds) : {}
+  const pageOf = (id: unknown) => handles[String(id || "")] || ""
+
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
-  const stamp = creator.handle + "-" + rangeKey
+  const stamp = (grouped ? creator.handle + "-collection" : creator.handle) + "-" + rangeKey
 
   if (what === "clicks") {
     const { data } = await supabaseAdmin
       .from("link_clicks")
       .select(
-        "created_at, destination_url, country, region, city, device, browser, os, referrer, source, visitor_id, session_id",
+        "created_at, creator_id, destination_url, country, region, city, device, browser, os, referrer, source, visitor_id, session_id",
       )
-      .eq("creator_id", creator.id)
+      .in("creator_id", creatorIds)
       .gte("created_at", since)
       .order("created_at", { ascending: true })
       .limit(20000)
 
     const rows = (data || []) as Array<Record<string, unknown>>
+    const header = [
+      "When",
+      "Destination",
+      "Country",
+      "Region",
+      "City",
+      "Device",
+      "Browser",
+      "OS",
+      "Referrer",
+      "Source",
+      "Visitor",
+      "Session",
+    ]
     const body = csv(
-      [
-        "When",
-        "Destination",
-        "Country",
-        "Region",
-        "City",
-        "Device",
-        "Browser",
-        "OS",
-        "Referrer",
-        "Source",
-        "Visitor",
-        "Session",
-      ],
-      rows.map((r) => [
-        r.created_at,
-        r.destination_url,
-        r.country,
-        r.region,
-        r.city,
-        r.device,
-        r.browser,
-        r.os,
-        r.referrer,
-        r.source,
-        r.visitor_id,
-        r.session_id,
-      ]),
+      grouped ? ["Page", ...header] : header,
+      rows.map((r) => {
+        const line = [
+          r.created_at,
+          r.destination_url,
+          r.country,
+          r.region,
+          r.city,
+          r.device,
+          r.browser,
+          r.os,
+          r.referrer,
+          r.source,
+          r.visitor_id,
+          r.session_id,
+        ]
+        return grouped ? [pageOf(r.creator_id), ...line] : line
+      }),
     )
     return send(body, "landr-clicks-" + stamp + ".csv")
   }
@@ -103,19 +126,19 @@ export async function GET(request: Request, { params }: { params: Promise<{ hand
     const [linkRes, clickRes, viewRes] = await Promise.all([
       supabaseAdmin
         .from("links")
-        .select("id, label, url, position, is_active")
-        .eq("creator_id", creator.id)
+        .select("id, creator_id, label, url, position, is_active")
+        .in("creator_id", creatorIds)
         .order("position", { ascending: true }),
       supabaseAdmin
         .from("link_clicks")
         .select("link_id")
-        .eq("creator_id", creator.id)
+        .in("creator_id", creatorIds)
         .gte("created_at", since)
         .limit(20000),
       supabaseAdmin
         .from("page_views")
         .select("id", { count: "exact", head: true })
-        .eq("creator_id", creator.id)
+        .in("creator_id", creatorIds)
         .gte("created_at", since),
     ])
 
@@ -129,12 +152,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ hand
       if (id) perLink.set(id, (perLink.get(id) || 0) + 1)
     }
 
+    const header = ["Link", "Destination", "Position", "Live", "Clicks", "Page views", "Click rate %"]
     const body = csv(
-      ["Link", "Destination", "Position", "Live", "Clicks", "Page views", "Click rate %"],
+      grouped ? ["Page", ...header] : header,
       links.map((l) => {
         const hits = perLink.get(String(l.id)) || 0
         const rate = viewCount > 0 ? Math.round((hits / viewCount) * 1000) / 10 : 0
-        return [l.label, l.url, l.position, l.is_active === false ? "no" : "yes", hits, viewCount, rate]
+        const line = [l.label, l.url, l.position, l.is_active === false ? "no" : "yes", hits, viewCount, rate]
+        return grouped ? [pageOf(l.creator_id), ...line] : line
       }),
     )
     return send(body, "landr-links-" + stamp + ".csv")
@@ -143,49 +168,53 @@ export async function GET(request: Request, { params }: { params: Promise<{ hand
   const { data } = await supabaseAdmin
     .from("page_views")
     .select(
-      "created_at, path, country, region, city, device, browser, os, referrer, source, visitor_id, session_id, duration_seconds, language, screen",
+      "created_at, creator_id, path, country, region, city, device, browser, os, referrer, source, visitor_id, session_id, duration_seconds, language, screen",
     )
-    .eq("creator_id", creator.id)
+    .in("creator_id", creatorIds)
     .gte("created_at", since)
     .order("created_at", { ascending: true })
     .limit(20000)
 
   const rows = (data || []) as Array<Record<string, unknown>>
+  const header = [
+    "When",
+    "Page",
+    "Country",
+    "Region",
+    "City",
+    "Device",
+    "Browser",
+    "OS",
+    "Referrer",
+    "Source",
+    "Visitor",
+    "Session",
+    "Seconds on page",
+    "Language",
+    "Screen",
+  ]
   const body = csv(
-    [
-      "When",
-      "Page",
-      "Country",
-      "Region",
-      "City",
-      "Device",
-      "Browser",
-      "OS",
-      "Referrer",
-      "Source",
-      "Visitor",
-      "Session",
-      "Seconds on page",
-      "Language",
-      "Screen",
-    ],
-    rows.map((r) => [
-      r.created_at,
-      r.path,
-      r.country,
-      r.region,
-      r.city,
-      r.device,
-      r.browser,
-      r.os,
-      r.referrer,
-      r.source,
-      r.visitor_id,
-      r.session_id,
-      r.duration_seconds,
-      r.language,
-      r.screen,
-    ]),
+    grouped ? ["Model page", ...header] : header,
+    rows.map((r) => {
+      const line = [
+        r.created_at,
+        r.path,
+        r.country,
+        r.region,
+        r.city,
+        r.device,
+        r.browser,
+        r.os,
+        r.referrer,
+        r.source,
+        r.visitor_id,
+        r.session_id,
+        r.duration_seconds,
+        r.language,
+        r.screen,
+      ]
+      return grouped ? [pageOf(r.creator_id), ...line] : line
+    }),
   )
   return send(body, "landr-views-" + stamp + ".csv")
 }
