@@ -187,6 +187,51 @@ the UI cannot disagree with the rule.
 **Proof status.** Migrations are DB-verified (`information_schema`). All code is **CODE** proof only —
 B14 still means no typecheck result is readable from here.
 
+### Block 5 — the Team tab, the placeholder sweep, and the collection scope leak
+
+| SHA | What |
+| --- | --- |
+| `07156abc` | `/register` and `/signin` copy: no more `Ava` sample values |
+| `b6491197` | **Team tab rebuilt** — `users/page.tsx` splits into `TeamForAdmin` and `TeamForOwner`; new `updateOwnLogin` in `users/actions.ts`; `cleanRole` accepts `creator` — closes **B22** → F23 |
+| `f836cbfa`, `f8179966` | Add-a-model form placeholders made generic ("the name shown on her page", "her page name, short and lowercase", "the name she signs in with"), invite box → "their email address". `f8179966` repairs an em-dash escape the first push shipped doubled |
+| `29171619` | Editor social row: `https://instagram.com/ava` → "paste the full link to your profile"; platform box → "platform name" |
+| `a4cb67ea` | **new** `lib/collectionScope.ts` (`NO_COLLECTION_MATCH`, `resolveCollectionScope`, `handlesByCreatorId`); `export/route.ts` rewritten to read `?collection=`, query `.in("creator_id", creatorIds)`, prepend a page-name column and add `-collection` to the filename |
+| `341c4192` | The analytics page derives its options, selection, page count and creator ids from that helper; export links carry `&collection=`; the footnote now says the CSVs follow the filter — closes **B21** → F24 and **B20** → F25 |
+| `ef1d6386` | Fix: `341c4192` shipped the stat-change arrow escape doubled. Replaced with `&uarr;`/`&darr;` entities |
+
+**The Team tab is the first thing this session with LIVE proof.** The client saved
+`/dashboard/ava/users` as MHTML while signed in as an Admin and attached it; extracting the text
+(python3 in the sandbox — no `tesseract` available, so text extraction rather than OCR) shows the
+rewritten `TeamForAdmin` rendering without error: the accounts list with Admin/Model/Creator role
+selects, "Who owns which page", "Remove an account" and "Delete a page" with handle confirmation. The
+owner/model branch has still never been opened — it needs Jethro's login. The same capture
+reconfirms the workspace holds only two accounts (`balogundivinee@gmail.com` admin,
+`jethrokhale@gmail.com` model) and two pages, `/ava` and the duplicate `/jaero_yt`.
+
+**One helper for two screens (F24/F25).** The filter and the export had each grown their own idea of
+which collection a viewer may read, and they disagreed: the dropdown listed the whole `collections`
+table by name, while the export ignored the parameter entirely. Both now call
+`resolveCollectionScope`, which returns the visible options, the selected collection, the readable
+creator ids and the page count in one shot. Two side effects worth noting: membership is now narrowed
+with `.in("id", managedIds)` instead of `.eq("account_id", …)`, which also fixes a **creator** — who
+manages pages he does not own — reading zero when filtering by collection; and `NO_MATCH` moved out
+of the page into the helper as `NO_COLLECTION_MATCH`.
+
+**The half-landed commit.** `a4cb67ea` shipped the helper and the export route but not the page that
+leaked, so for about three minutes the repo held a helper nothing called and an export parameter
+nothing sent. Push the caller in the same commit as the helper, or the bug is still live while the
+log says fixed.
+
+**Escapes get mangled on a whole-file resend — twice today.** `f8179966` repaired a doubled em-dash
+escape and `ef1d6386` a doubled `\u2191`/`\u2193`; in both cases the source held two backslashes and
+the page would have printed the escape literally. Neither would have been caught by a typecheck.
+Rules now in `BUGS.md`: prefer HTML entities such as `&uarr;` in JSX, and re-read every file after
+pushing it — the same discipline that caught the stray brace in `7ae2484e`.
+
+**Residual, filed not fixed.** `TeamForOwner`'s relationship buttons import their actions from
+`app/dashboard/actions.ts`, which redirects to `/dashboard?msg=…`, so acting from the tab throws the
+user out to the creator home — logged as **B25** (P2).
+
 ## 2026-09-26 (morning) — audit, benchmark recovery, memory system
 
 - Located the plan of record: the client supplied `project landr.zip` (24 step PDFs + 24 TEST
