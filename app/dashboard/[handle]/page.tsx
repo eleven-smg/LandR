@@ -189,12 +189,13 @@ function changePct(now: number, before: number) {
   return Math.round(((now - before) / before) * 1000) / 10
 }
 
+/** Entities, not unicode escapes: this file is resent whole through the API and
+ *  a backslash escape has been mangled in transit before. */
 function Change({ value }: { value: number }) {
   const down = value < 0
-  const arrow = down ? "\\u2193" : "\\u2191"
   return (
     <div className={down ? "stat-change down" : "stat-change"}>
-      {arrow} {Math.abs(value)}%
+      {down ? <>&darr;</> : <>&uarr;</>} {Math.abs(value)}%
     </div>
   )
 }
