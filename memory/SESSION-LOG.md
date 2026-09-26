@@ -133,6 +133,60 @@ tail of every file written with `push_files` before moving on — or finally clo
 `PROGRESS.md` and `DECISIONS.md` entries for this architecture change are **deliberately deferred**
 until those three are answered; the scope is not yet numbered.
 
+### Block 4 — favicon, the sign-in autofill scare, collections that actually do something, and the work claim
+
+Four things raised at 12:15. Supabase MCP **is** connected in this block, so migrations were possible.
+
+| SHA / migration | What |
+| --- | --- |
+| `eb31f2d0` | **new** `app/icon.svg` (blue tile, white L, green active dot) — closes **F20**; sign-in password field → `autoComplete="new-password"` — closes **F19**; a leftover "Users tab" hint relabelled "Team tab" |
+| `b33785e8` | Stock `app/favicon.ico` deleted (the untouched create-next-app default, 25,931 bytes) so no browser can prefer it over the SVG |
+| migration `collection_destinations_takeover_and_owner` | `collections` gains `owner_account_id` (backfilled from the pages inside each collection), `country_redirect_enabled`, `destinations jsonb`, `takeover_url`, `takeover_enabled`; `links` gains `collection_key`; two indexes |
+| `62c8463d` | **new** `lib/collections.ts` (`safeExternalUrl`, `normalizeDestinations`, `platformKeyFor`, `loadCollectionSettings`, `collectionDestinationFor`, `DESTINATION_KEYS`); `/go/[id]` resolution order is now **per-link country rule → collection destination → rotation → link default** |
+| `e24c44c2` | Public page honours the group country default (the page's own `blocked_redirect_url` still wins) and the campaign takeover, both after `logPageView` so traffic is counted, and neither under `?preview=1` |
+| `960b1c5c` | Collections tab edits all three behaviours, each with its own switch, and prints a plain-English `describe()` line; create modal is name-only; list scoped by `owner_account_id`, edit/delete owner-or-admin, null-owner legacy rows admin-only — closes **F18** and **F21** |
+| migration `creator_clients_work_claim` | `work_claim` ('none'\|'requested'\|'approved'\|'declined', default 'none'), `work_claimed_by` ('model'\|'creator'), `work_claim_note`, `work_claimed_at`, `work_decided_at`, with both check constraints |
+| `ca2a6915` | `memory/BUGS.md` rewritten with F18–F21 and new B21–B24 |
+| `af3d3fba` | `lib/creatorTeam.ts` carries the work-claim columns and exports the single `needsReleaseApproval()` rule used by both the action and the UI |
+| `78af4f8b` | The work-claim flow — closes **B24** → F22 |
+| `9bef3009`, `944d6a0a` | `BUGS.md` B24→F22; `DECISIONS.md` collection behaviours + the work-claim rule |
+
+**The collection redirect was dead (F18).** `collections.redirect_url` was written by the tab and read
+by **nothing**: the public page reads `creators.blocked_redirect_url`, `/go/[id]` reads per-link
+`geo_rules`, and neither ever loaded a collection. It had been described to the client as a
+flagged-country destination since `3a1620f5`, so the product was claiming behaviour it did not have —
+which is exactly why he could not work out "how that one works". Asked which of the three readings he
+meant and he answered "idk maybe add all and an option to disable each", so all three are built with
+independent switches. Existing `redirect_url` values were deliberately left **disabled** so no live
+visitor behaviour changed silently.
+
+**Destinations need no tagging.** A collection destination matches on `links.collection_key` when it
+is set, and otherwise on the platform derived from the link's own destination host, so a Telegram
+link is recognised as Telegram with zero setup. That was chosen specifically to avoid shipping
+another field nobody fills in — the F18 mistake again.
+
+**Collections group your pages, not your visitors.** That conflation was the root of the client's
+confusion ("how do I add a group of people to that collection"). There is no audience concept
+anywhere in it; the Collections tab is the only place a page joins one.
+
+**The sign-in autofill was never a leak (F19).** `signOut()` deletes the cookie and the form renders
+empty; Chrome's own password manager was filling it because the field asked for
+`autoComplete="current-password"`. Saved credentials live in the visitor's own browser profile, so it
+could never appear on anybody else's phone. Told him so, and switched the field to `new-password`
+anyway — the email is still suggested through `autoComplete="username"`.
+
+**Who does the work (F22).** He could not decide whether the model or the creator declares it. Settled
+on: **the creator declares at accept, she approves**. Reasons — the model would never volunteer the
+flag; the creator is the one who knows; and her approval is what makes it binding, so he cannot lock
+her in by himself. An *unanswered* claim deliberately does not restrain her: if she disconnects
+anyway the claim is recorded as declined, which means he always learns his standing before doing the
+work. `disconnectCreator` routes to the release path when `invited_by = 'creator'` **or**
+`work_claim = 'approved'`, and both the action and the button label read that from the same helper, so
+the UI cannot disagree with the rule.
+
+**Proof status.** Migrations are DB-verified (`information_schema`). All code is **CODE** proof only —
+B14 still means no typecheck result is readable from here.
+
 ## 2026-09-26 (morning) — audit, benchmark recovery, memory system
 
 - Located the plan of record: the client supplied `project landr.zip` (24 step PDFs + 24 TEST
