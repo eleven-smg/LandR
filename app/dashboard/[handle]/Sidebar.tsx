@@ -12,11 +12,14 @@ type Props = {
 type Item = { slug: string; label: string; icon: string }
 
 // Slug "" is the analytics index at /dashboard/<handle>.
+// The geoblocking slug is kept so existing links and bookmarks still work; the
+// label is "Country rules" because nothing is actually blocked: flagged
+// visitors see the normal page with different link destinations.
 const ITEMS: Item[] = [
   { slug: "", label: "Analytics", icon: "chart" },
   { slug: "edit", label: "Page Editor", icon: "pencil" },
   { slug: "collections", label: "Collections", icon: "grid" },
-  { slug: "geoblocking", label: "Geoblocking", icon: "globe" },
+  { slug: "geoblocking", label: "Country rules", icon: "globe" },
   { slug: "users", label: "Users", icon: "users" },
 ]
 

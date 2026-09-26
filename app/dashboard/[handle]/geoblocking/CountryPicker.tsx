@@ -5,6 +5,16 @@ import type { CSSProperties } from "react"
 import { TIERS, nameFor } from "@/lib/countryGroups"
 import { saveBlockedCountries } from "../edit/actions"
 
+/**
+ * The flagged-country list for the whole page.
+ *
+ * Wording matters here: nothing is blocked. A flagged visitor sees the normal
+ * page and the only difference is where a link with a country rule sends them,
+ * which is set per link in the page editor. The database columns are still
+ * called blocked_countries / blocked_redirect_url, and the form field names
+ * match them so the existing server action keeps working.
+ */
+
 const card: CSSProperties = {
   background: "#181c27",
   border: "1px solid #232940",
@@ -20,9 +30,9 @@ const tag: CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   gap: 6,
-  background: "rgba(248,113,113,0.12)",
-  border: "1px solid rgba(248,113,113,0.35)",
-  color: "#fca5a5",
+  background: "rgba(251,191,36,0.12)",
+  border: "1px solid rgba(251,191,36,0.35)",
+  color: "#fbbf24",
   borderRadius: 999,
   padding: "4px 10px",
   fontSize: 12,
@@ -30,7 +40,7 @@ const tag: CSSProperties = {
 const tagX: CSSProperties = {
   background: "none",
   border: "none",
-  color: "#fca5a5",
+  color: "#fbbf24",
   cursor: "pointer",
   fontSize: 14,
   lineHeight: 1,
@@ -111,18 +121,18 @@ export default function CountryPicker({
   const [open, setOpen] = useState<string>("")
   const [manual, setManual] = useState("")
   // Empty redirect field means "show them my normal page", which is what the
-  // agency wants: the visitor never sees a block screen, only the per-link
-  // country rules send them somewhere else.
+  // agency wants: the visitor never leaves the page, only the per-link country
+  // rules send them somewhere else.
   const [mode, setMode] = useState<string>(redirectUrl ? "url" : "page")
   const [url, setUrl] = useState(redirectUrl)
 
   function toggle(code: string) {
     setSel((s) => (s.includes(code) ? s.filter((c) => c !== code) : s.concat(code)))
   }
-  function blockAll(codes: string[]) {
+  function addTier(codes: string[]) {
     setSel((s) => s.concat(codes.filter((c) => !s.includes(c))))
   }
-  function unblockAll(codes: string[]) {
+  function clearTier(codes: string[]) {
     setSel((s) => s.filter((c) => !codes.includes(c)))
   }
   function addManual() {
@@ -142,9 +152,10 @@ export default function CountryPicker({
       <input type="hidden" name="blocked_redirect_url" value={mode === "url" ? url : ""} />
 
       <div style={card}>
-        <h3 style={h3s}>Countries treated differently</h3>
+        <h3 style={h3s}>Flagged countries</h3>
+        <p style={sub}>These are the countries a link can treat differently. Nobody is blocked or turned away.</p>
         {sel.length === 0 ? (
-          <div style={empty}>No countries listed. Pick a group or add countries below.</div>
+          <div style={empty}>No countries flagged yet. Pick a group or add countries below.</div>
         ) : (
           <div style={tagWrap}>
             {sel.map((c) => (
@@ -169,12 +180,12 @@ export default function CountryPicker({
                   <div style={tierNote}>{t.note}</div>
                 </div>
                 <span style={count}>
-                  {on} / {codes.length} listed
+                  {on} / {codes.length} flagged
                 </span>
-                <button type="button" style={ghost} onClick={() => blockAll(codes)}>
+                <button type="button" style={ghost} onClick={() => addTier(codes)}>
                   Add all
                 </button>
-                <button type="button" style={ghost} onClick={() => unblockAll(codes)}>
+                <button type="button" style={ghost} onClick={() => clearTier(codes)}>
                   Clear
                 </button>
                 <button type="button" style={ghost} onClick={() => setOpen(open === t.id ? "" : t.id)}>
@@ -208,13 +219,14 @@ export default function CountryPicker({
         </div>
         <p style={hint}>
           Codes are ISO 3166 alpha-2. Groups are a shortcut only, you can add or remove any single country. Country
-          detection comes from Vercel and is blank on localhost, so nothing is blocked while you test on your own PC.
+          detection comes from Vercel and is blank on localhost, so no country rule applies while you test on your own
+          PC.
         </p>
       </div>
 
       <div style={card}>
-        <h3 style={h3s}>What those countries see</h3>
-        <p style={sub}>Both options keep working with the per-link country rules in the page editor.</p>
+        <h3 style={h3s}>What flagged visitors see</h3>
+        <p style={sub}>Both options keep working with the country rules you set on each link in the page editor.</p>
 
         <label style={mode === "page" ? choiceOn : choice}>
           <input
@@ -228,10 +240,10 @@ export default function CountryPicker({
           <span>
             <span style={choiceTitle}>Show them my normal page (recommended)</span>
             <span style={choiceNote}>
-              No block screen and no redirect. They land on your page exactly like everyone else. What changes is where
-              individual buttons send them: set a country rule on the Telegram button in the page editor and this group
-              gets that link, while Instagram stays the same for the whole world. Any link without a rule behaves
-              identically for everybody.
+              No warning screen and no redirect. They land on your page exactly like everyone else. What changes is where
+              individual buttons send them: tick <b>Country rules for this link</b> on the Telegram button in the page
+              editor and this group gets that link, while Instagram stays the same for the whole world. Any link without
+              a rule behaves identically for everybody.
             </span>
           </span>
         </label>
@@ -262,7 +274,7 @@ export default function CountryPicker({
 
         <div style={{ marginTop: 14 }}>
           <button style={primary} type="submit">
-            Save geoblocking
+            Save country rules
           </button>
         </div>
       </div>

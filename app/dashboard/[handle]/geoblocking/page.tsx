@@ -13,7 +13,7 @@ const title: CSSProperties = { fontSize: 20, fontWeight: 700 }
 const sub: CSSProperties = { color: "#8892a4", fontSize: 13, marginTop: 4 }
 const wrap: CSSProperties = { maxWidth: 820 }
 
-export default async function GeoblockingPage({ params }: { params: Promise<{ handle: string }> }) {
+export default async function CountryRulesPage({ params }: { params: Promise<{ handle: string }> }) {
   const { handle } = await params
 
   const { data: creator } = await supabaseAdmin
@@ -41,8 +41,11 @@ export default async function GeoblockingPage({ params }: { params: Promise<{ ha
   return (
     <div style={wrap}>
       <div style={head}>
-        <div style={title}>Geoblocking</div>
-        <div style={sub}>Pick the countries that get treated differently, then choose what they see</div>
+        <div style={title}>Country rules</div>
+        <div style={sub}>
+          Flag the countries you want treated differently, then set each link&apos;s destination for them in the page
+          editor.
+        </div>
       </div>
 
       <CountryPicker
