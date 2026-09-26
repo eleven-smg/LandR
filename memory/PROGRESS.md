@@ -3,7 +3,7 @@
 **Plan of record:** the 24-step pack from `project landr.zip`. Added scope from the chat sessions
 is Part 2. No other roadmap.
 
-**Last verified:** 2026-09-26 against `main @ 3efb889a` (last application-code commit of the 26 Sep
+**Last verified:** 2026-09-26 against `main @ d721982b` (last application-code commit of the 26 Sep
 session; memory commits landed after it). Schema facts in `STATE.md` are live-verified as of 26 Sep;
 row counts still date from 3 Sep and **cannot be refreshed** — the Supabase MCP server is not
 connected in this block.
@@ -28,7 +28,7 @@ exercised by a real user · `NONE`
 | 8 | Custom Domain (+ per-creator subdomains) | NOT STARTED | NONE | Still on `alandr.vercel.app`. Pack flags subdomains may need a paid Vercel plan; Hobby is non-commercial. |
 | 9 | Multi-Client (scoped client logins + Clients overview) | DONE | CODE | **Re-architected twice.** An `accounts` table with `role` (`admin`/`model`/`creator`) replaced the pack's shared env password; then the 26 Sep creator work added a creator home, `creator_clients`, compare-models, the work claim and the rebuilt Team tab (C1–C7, the last of them F23). Gate lives in `app/dashboard/[handle]/layout.tsx`; every server action and the export route gate themselves too (F10–F12). Never tested with a second real account. |
 | 10 | Deeper Analytics (top countries + richer dashboard) | DONE | LIVE | Rebuilt on real visitor data: unique visitors, sessions, clicked-nothing, time on page, entry/exit, languages, screens, countries, "which link earns". "Filter on collection" added 26 Sep (F14, CODE) and scoped to the viewer the same day (F24). |
-| 11 | Public Self-Serve Sign-Up | DONE | LIVE | **Deviation:** route is `/register`, not `/signup`; writes `accounts` + a `creators` page. One extra page `/jaero_yt` exists from a test (F13) and can now be deleted from Team. |
+| 11 | Public Self-Serve Sign-Up | DONE | LIVE | **Deviation:** route is `/register`, not `/signup`; writes `accounts` + a `creators` page. One extra page `/jaero_yt` exists from a test (F13) and can now be deleted from Team. Rate-limited since `d721982b` (F29). |
 | 12 | Rotate Your Secret Keys | CANCELLED | — | Client declined outright (22 Aug, restated later). Keys leaked into the chat archive and the handoff PDF remain live. Do not raise again; recorded in `DECISIONS.md`. |
 | 13 | Analytics Date-Range Picker | DONE | LIVE | **Deviation:** Day / Week / Month / Year tabs instead of 7 / 30 / 90 / All time. |
 | 14 | Best-Time-to-Post Heatmap (7×24) | NOT STARTED | NONE | No heatmap in `app/dashboard/[handle]/page.tsx`. |
@@ -39,11 +39,11 @@ exercised by a real user · `NONE`
 | 19 | Scheduled & Expiring Links | PARTIAL | CODE | `starts_at` / `ends_at` columns exist; **nothing filters on them** and there is no `schedule/` UI. |
 | 20 | A/B Testing (variant performance) | NOT STARTED | NONE | No `experiments/` route. Depends on Step 7 rotation, which is built. |
 | 21 | QR Code | NOT STARTED | NONE | No `qr/` route. Pack's third-party QR service must be replaced with local generation (see `DECISIONS.md`). |
-| 22 | Signup Guardrails (rate-limit + reserved handles) | PARTIAL | CODE | Reserved handles + handle sanitising + duplicate email/handle checks are in `app/register/actions.ts`. **No rate limiting:** the `signup_log` table and its IP index exist but nothing writes to them (0 rows). |
+| 22 | Signup Guardrails (rate-limit + reserved handles) | DONE | CODE | Reserved handles + handle sanitising + duplicate email/handle checks are in `app/register/actions.ts`. The missing half, **rate limiting**, shipped 26 Sep as F29 (`d721982b`): `lib/signupLimit.ts` allows 3 signups per IP per hour and 8 per day, writes the long-unused `signup_log` table, and the register page explains the refusal. Fails open on a read error, by design. |
 | 23 | Cookie / Consent Banner | NOT STARTED | NONE | No consent component anywhere in `app/`. |
 | 24 | Email Broadcast (Resend) | NOT STARTED | NONE | No `broadcast/` route, no Resend integration or env vars. |
 
-**Pack totals:** 12 DONE · 5 PARTIAL · 6 NOT STARTED · 1 CANCELLED.
+**Pack totals:** 13 DONE · 4 PARTIAL · 6 NOT STARTED · 1 CANCELLED.
 
 ---
 
@@ -106,15 +106,16 @@ FanplaceFinder no longer exists in the reference product — nothing to build fo
 
 ## Part 3 — where we are and what is next
 
-**26 Sep 2026 was the first code session since 25 Aug**, and it ran in six blocks: the site-wide
+**26 Sep 2026 was the first code session since 25 Aug**, and it ran in seven blocks: the site-wide
 tap/click bug (F9) and the authorization sweep (F10–F12); the reference-driven UI work (F14–F17);
 the creator/model architecture (C1–C3); the client's 12:15 list — favicon (F20), the sign-in autofill
 scare (F19, never a leak), collections that actually do something (F18/F21, C4–C5) and the work claim
 (F22, C6); then the Team tab (F23, C7), the placeholder sweep and the collection scope leak
-(F24/F25); and last the three small ones — the unstyled `.nav-current` label (F26), the Team tab
-throwing you off the tab when you acted on it (F27), and the residual "blocked" copy sweep, which
-found its one real survivor on the **public marketing home** (F28). Migrations are DB-verified and
-the Team tab's admin view was seen rendering live; **every other line of code is CODE proof only** —
+(F24/F25); the three small ones — the unstyled `.nav-current` label (F26), the Team tab throwing you
+off the tab when you acted on it (F27), and the residual "blocked" copy sweep, which found its one
+real survivor on the **public marketing home** (F28); and last the signup rate limit that closed the
+only remaining P1 reachable without a database connection (F29). Migrations are DB-verified and the
+Team tab's admin view was seen rendering live; **every other line of code is CODE proof only** —
 there is a typecheck workflow but no tool here can read its result (B14), and the deploy has not been
 walked.
 
@@ -140,21 +141,23 @@ and the domain all say **LandR**. F28 unified it on LandR on that evidence. Stil
    (F24/F25, `a4cb67ea` + `341c4192`), both now behind one helper.
 6. ~~B23 `.nav-current` has no rule; B25 Team tab actions redirect off the tab; B19 residual
    "blocked" copy sweep~~ — **done** 26 Sep (F26 `82a2f365`, F27 `d65323d7`, F28 `3efb889a`).
-7. **Verify on the deploy.** Nothing except the Team tab's admin view has been clicked: favicon,
+7. ~~B9 / Step 22 — rate-limit `/register` and start writing `signup_log`~~ — **done** 26 Sep
+   (F29, `d721982b`). No migration was needed; the table had existed unused since August.
+8. **Verify on the deploy.** Nothing except the Team tab's admin view has been clicked: favicon,
    empty password field, a country rule, the collection filter **and a collection CSV**, one page
    deletion, creator home, compare, the three collection behaviours, an accept-with-claim → approve
    → blocked disconnect, the Team tab on a model login, the `.nav-current` label, the Team tab
-   staying put after an action, and the reworded home page.
-8. Delete the duplicate `/jaero_yt` page (possible in the product since F15, still not done; needs
+   staying put after an action, the reworded home page, and one `/register` signup (which should now
+   leave a `signup_log` row).
+9. Delete the duplicate `/jaero_yt` page (possible in the product since F15, still not done; needs
    Supabase or the admin UI).
-9. **Infra** — move Supabase off the free tier (B8: the project auto-paused and the live page served
-   database errors for ~3 weeks).
-10. **A24 visual page builder** — the biggest item; still blocked on the profile-photo resize and
+10. **Infra** — move Supabase off the free tier (B8: the project auto-paused and the live page served
+    database errors for ~3 weeks).
+11. **A24 visual page builder** — the biggest item; still blocked on the profile-photo resize and
     canvas decisions in `DECISIONS.md`.
-11. **A25 / B3 / B4 session + password hardening** — required before ten real model logins exist.
-12. **Finish the partials:** Step 15 (needs Step 18 UTM), Step 16 (subscribers CSV), Step 19
-    (filter on `starts_at`/`ends_at`), Step 22 (write `signup_log`, add rate limit), A17 editor
-    compaction.
-13. **Then the untouched steps:** 14, 17, 18, 20, 21, 23, 24, and 8 when a domain is bought.
-14. Housekeeping: A30 delete the stale branch; B5 regenerate `sql/schema.sql` from the live database.
-15. Only after LandR is done: `eleven-smg/chatterdesk`.
+12. **A25 / B3 / B4 session + password hardening** — required before ten real model logins exist.
+13. **Finish the partials:** Step 15 (needs Step 18 UTM), Step 16 (subscribers CSV), Step 19
+    (filter on `starts_at`/`ends_at`), A17 editor compaction.
+14. **Then the untouched steps:** 14, 17, 18, 20, 21, 23, 24, and 8 when a domain is bought.
+15. Housekeeping: A30 delete the stale branch; B5 regenerate `sql/schema.sql` from the live database.
+16. Only after LandR is done: `eleven-smg/chatterdesk`.
