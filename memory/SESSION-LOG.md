@@ -47,7 +47,7 @@ needs its own gate.
 | `ca011598` | **new** `edit/CountryRules.tsx` — tick box + per-rule scope dropdown (every flagged country / first / second / third world / pick countries), destination URL, country checkbox grid, summary line |
 | `e5da8cfe` | `edit/page.tsx` uses `CountryRules`; free-text rule box and the stray "Link rotation lives in the Geoblocking tab" line removed; section retitled "Country rules for this link" with a count badge |
 | `96d9cc6d` | Geoblocking → **Country rules** in the sidebar and page title (slug kept), `CountryPicker.tsx` reworded to flagged-visitor language, chips amber, `blockAll`/`unblockAll` → `addTier`/`clearTier` (closes **F17**) |
-| `bdda4002` | Analytics **"Filter on collection"** dropdown, admin-gated; `collections/page.tsx` sub copy rewritten (closes **B13** → F14) |
+| `bdda4002` | Analytics **"Filter on collection"** dropdown, admin-gated — **the gate was removed again in `00a43883`, see Block 3**; `collections/page.tsx` sub copy rewritten (closes **B13** → F14) |
 | `3a1620f5` | `CollectionsUI.tsx` — redirect labelled optional, "blocked"/"block screen" copy gone, note that Analytics can add the group together |
 | `2171e5fd` | Users → **Delete a page**: new admin-only `deletePage` action with typed-handle confirm and child-first cleanup (closes **B17** → F15) |
 
@@ -57,11 +57,11 @@ untouched and **no migration was needed** — which mattered, because the Supaba
 connected this session. Unticking the box and saving clears the rules.
 
 **Analytics collection filter.** `?collection=<id>` swaps the five `.eq("creator_id", creator.id)`
-filters for `.in("creator_id", ids)` over the collection's pages. It is gated on **admin**, not just
-access: a collection spans pages owned by other people, so without that check one model could read
-another's numbers. A model who passes the parameter is ignored and still sees their own page. An
-empty collection resolves to a sentinel uuid so every figure reads zero instead of silently falling
-back to one page's traffic. CSV export still has no collection parameter — logged as **B20**.
+filters for `.in("creator_id", ids)` over the collection's pages. It was first shipped **admin-gated**
+on the assumption that a collection spans pages owned by other people; the client corrected that
+assumption in Block 3, so the gate is gone. An empty collection resolves to a sentinel uuid so every
+figure reads zero instead of silently falling back to one page's traffic. CSV export still has no
+collection parameter — logged as **B20**.
 
 **Delete a page.** Admin-only, the typed handle must match the target row, and the page named in the
 address bar refuses to delete itself (it would pull the dashboard out from under the click). Children
@@ -88,6 +88,50 @@ Also settled this session, from the client's four reference screenshots (read as
   answers half of the A24 sizing question.
 - Client's own editor screenshot shows crop reading real values (50% / 18% / 100%), so "crop reads 0"
   is not reproducing here; awaiting confirmation.
+
+### Block 3 — collections re-scoped, and the creator/model architecture change
+
+| SHA | What |
+| --- | --- |
+| `00a43883` | Admin gate removed from the Analytics collection filter (now open to anyone with dashboard access; the creator ids are scoped to the pages the viewer manages, `role === "admin"` still sees all); `collections/page.tsx` page list scoped by `account_id`; sub copy rewritten |
+| `7ae2484e` | **Build fix** — `00a43883` shipped `collections/page.tsx` with a stray extra `}` after the final closing brace. Removed. |
+
+**What the client corrected (10:42).** My reading of Collections was wrong on two counts: it is
+**not** an admin-only tab, and it is **not** for inspecting pages owned by other models. A collection
+is the page owner's **own campaign folder** — group your own landing pages, attach one optional
+redirect URL that applies to every page in the group for flagged-country visitors, and filter
+Analytics by the group. Confirmed against the client's research on onyoursocials / UseClick /
+Postly-style products; treat that research as the spec. `00a43883` brings the code in line.
+
+**The stray-brace lesson.** `push_files` resends a whole file, so a mis-assembled tail ships
+silently. There is no typecheck and no CI (**B14**), so nothing catches it before Vercel. Re-read the
+tail of every file written with `push_files` before moving on — or finally close B14.
+
+**New architecture direction (client, 10:42).** Supersedes the multi-model-dashboard assumption:
+
+- **One dashboard = one model.** `/dashboard/ava` is Ava and her team only. You must not be able to
+  add another model from inside a model dashboard; another model registers their own account.
+- **Managing several models requires a "creator" account.** Signing into a creator account shows a
+  home/overview of all of that creator's model accounts → tap one → land in that model's full
+  dashboard (all five or six tabs, fully editable) → go back "home" → tap the next. Never all models
+  on one dashboard.
+- **New feature: compare models.** Select two, five, or any chosen subset of the creator's model
+  accounts and get a statistical / graphical / quantitative comparison of what is and is not
+  performing.
+
+**Blocking the creator build (asked, not yet answered):**
+
+1. Does each model keep their own login to their own dashboard while the creator also manages it? If
+   yes, ownership becomes many-to-many and needs a second column or a join table — and the
+   **Supabase MCP server is not connected**, so no migration is possible this session. If instead a
+   creator account simply owns several `creators` rows, the existing `creators.account_id` is enough
+   and **no migration is needed**.
+2. What the Users tab becomes inside a model dashboard — removed, or kept only for that model's own
+   team logins.
+3. Where the creator home lives (`/creator`, a `/dashboard` index, …).
+
+`PROGRESS.md` and `DECISIONS.md` entries for this architecture change are **deliberately deferred**
+until those three are answered; the scope is not yet numbered.
 
 ## 2026-09-26 (morning) — audit, benchmark recovery, memory system
 
