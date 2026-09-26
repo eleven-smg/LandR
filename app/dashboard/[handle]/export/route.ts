@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
-import { likeSafeHandle } from "@/lib/handles"
+import { requireDashboardAccess } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
 
@@ -32,6 +32,10 @@ function send(body: string, filename: string) {
  * Downloads the numbers behind the analytics page so the agency can keep its own
  * records or hand a spreadsheet to a model. Three shapes: raw views, raw clicks,
  * and one row per link with its click rate.
+ *
+ * This is visitor data, including cities and visitor ids, so the request has to
+ * prove itself. A route handler does not pass through the dashboard layout, so
+ * the ownership check has to happen here.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ handle: string }> }) {
   const { handle } = await params
@@ -40,15 +44,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ hand
   const what = String(url.searchParams.get("what") || "views")
   const days = RANGE_DAYS[rangeKey] || 7
 
-  const { data: creatorData } = await supabaseAdmin
-    .from("creators")
-    .select("id, handle")
-    .ilike("handle", likeSafeHandle(handle))
-    .limit(1)
-    .maybeSingle()
+  // Signed out, wrong owner and no such page all answer the same way, so this
+  // cannot be used to find out which handles exist.
+  const access = await requireDashboardAccess(handle)
+  if (!access) return new Response("Not allowed", { status: 403 })
 
-  const creator = creatorData as { id: string; handle: string } | null
-  if (!creator) return new Response("No page called " + handle, { status: 404 })
+  const creator = access.creator
 
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
   const stamp = creator.handle + "-" + rangeKey
