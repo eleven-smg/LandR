@@ -347,13 +347,13 @@ export default async function DashboardHome({
                         {link.status === "pending"
                           ? "Waiting for them to accept"
                           : link.status === "release_requested"
-                            ? "Release requested \u2014 waiting for their approval"
+                            ? "Release requested \\u2014 waiting for their approval"
                             : createdByCreator
                               ? "Set up your page, so a release needs their approval"
                               : link.workClaim === "approved"
                                 ? "You approved that they do the work, so a release needs their approval"
                                 : link.workClaim === "requested"
-                                  ? "Says they do the work \u2014 your approval is still open"
+                                  ? "Says they do the work \\u2014 your approval is still open"
                                   : "You invited them, so you can disconnect any time"}
                       </div>
                     </div>
@@ -379,19 +379,23 @@ export default async function DashboardHome({
               Creates her login and her page. She owns the page and signs in with this username; she can add an email
               later. Because you set her up, she cannot disconnect you without your agreement.
             </p>
+            {/*
+              Placeholders describe the field instead of showing a sample name.
+              A faint "Ava" reads as text that is already typed in.
+            */}
             <form action={createModelAccount}>
               <div style={formGrid}>
                 <label style={lbl}>
                   Display name
-                  <input style={input} name="displayName" placeholder="Ava" />
+                  <input style={input} name="displayName" placeholder="the name shown on her page" />
                 </label>
                 <label style={lbl}>
                   Page address
-                  <input style={input} name="handle" placeholder="ava" />
+                  <input style={input} name="handle" placeholder="her page name, short and lowercase" />
                 </label>
                 <label style={lbl}>
                   Username
-                  <input style={input} name="username" placeholder="ava" autoComplete="off" />
+                  <input style={input} name="username" placeholder="the name she signs in with" autoComplete="off" />
                 </label>
                 <label style={lbl}>
                   Password
@@ -416,7 +420,7 @@ export default async function DashboardHome({
               <form action={inviteCreator} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
                 <label style={{ ...lbl, flex: "1 1 220px" }}>
                   Creator email
-                  <input style={input} name="email" type="email" placeholder="creator@agency.com" />
+                  <input style={input} name="email" type="email" placeholder="their email address" />
                 </label>
                 <button style={btn} type="submit">
                   Send request
