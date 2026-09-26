@@ -74,6 +74,21 @@
   border-left-color: var(--dash-accent);
   background: rgba(91, 127, 255, 0.1);
 }
+/* The page being worked on, shown above the tabs only when this account
+   manages more than one. A label, not a link, so it is deliberately quieter
+   than the nav items under it. */
+.dash-root .nav-current {
+  padding: 6px 20px 10px;
+  border-left: 3px solid transparent;
+  color: var(--dash-text);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .dash-root .nav-icon {
   width: 16px;
   height: 16px;
@@ -454,6 +469,7 @@
   }
   .dash-root .nav-item span,
   .dash-root .logo span,
+  .dash-root .nav-current,
   .dash-root .user-info {
     display: none;
   }
