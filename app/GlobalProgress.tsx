@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation"
 import { subscribeToTasks } from "@/lib/progress"
 
 const TAP_CLASS = "landr-tapped"
+const BUSY_CLASS = "landr-busy"
 
 const css = [
   "@keyframes landrSlide { 0% { transform: translateX(-60%) } 100% { transform: translateX(260%) } }",
@@ -13,8 +14,13 @@ const css = [
   ".landr-bar > span { display: block; height: 100%; width: 38%;",
   "  background: linear-gradient(90deg, transparent, #5b7fff, #9ab0ff, transparent);",
   "  animation: landrSlide 1s linear infinite }",
-  ".landr-tapped { opacity: .45 !important; pointer-events: none !important;",
-  "  cursor: progress !important; transition: opacity .12s ease }",
+  // The press feedback is opacity only. It must never touch pointer-events:
+  // the browser picks the click target at pointer-up, so a button made
+  // unclickable on pointerdown swallows its own first click.
+  ".landr-tapped { opacity: .45 !important; cursor: progress !important;",
+  "  transition: opacity .12s ease }",
+  // Repeat taps are blocked instead, and only once the first click is away.
+  ".landr-busy { pointer-events: none !important }",
 ].join(String.fromCharCode(10))
 
 /**
@@ -23,8 +29,13 @@ const css = [
  * times. Two signals now cover the whole site:
  *
  * 1. One bar at the top of every page for navigations and background saves.
- * 2. The button or link you actually tapped dims and stops taking taps until
- *    the work finishes, so a second tap cannot queue up behind the first.
+ * 2. The button or link you actually tapped dims and stops taking further
+ *    taps until the work finishes, so a second tap cannot queue up behind
+ *    the first.
+ *
+ * Ordering matters. `pointerdown` only dims. The element is taken out of
+ * hit-testing from the `click` handler on the next tick, once the browser has
+ * finished dispatching the click that the user actually made.
  */
 export default function GlobalProgress() {
   const pathname = usePathname()
@@ -51,23 +62,32 @@ export default function GlobalProgress() {
   useEffect(() => {
     function release(el: HTMLElement) {
       el.classList.remove(TAP_CLASS)
+      el.classList.remove(BUSY_CLASS)
       tappedRef.current.delete(el)
     }
 
+    function pressable(target: EventTarget | null): HTMLElement | null {
+      const el = target as HTMLElement | null
+      if (!el || !el.closest) return null
+      const hit = el.closest("button, a, [role=button]") as HTMLElement | null
+      if (!hit) return null
+      if (hit.hasAttribute("disabled") || hit.getAttribute("aria-disabled") === "true") {
+        return null
+      }
+      return hit
+    }
+
     function onPointerDown(event: Event) {
-      const target = event.target as HTMLElement | null
-      if (!target || !target.closest) return
-      const el = target.closest("button, a, [role=button]") as HTMLElement | null
+      // Sliders, colour pickers and file inputs live inside labels, not
+      // buttons, so they are never caught here.
+      const el = pressable(event.target)
       if (!el) return
-      if (el.hasAttribute("disabled") || el.getAttribute("aria-disabled") === "true") return
-      // Sliders, colour pickers and file inputs live inside labels, not buttons,
-      // so they are never caught here.
       el.classList.add(TAP_CLASS)
       tappedRef.current.add(el)
 
-      // Most taps are instant, for example switching a tab. Those release after
-      // a blink. Anything still working keeps its button dimmed until the work
-      // finishes, and 8 seconds is the hard ceiling either way.
+      // Most taps are instant, for example switching a tab. Those release
+      // after a blink. Anything still working keeps its button dimmed until
+      // the work finishes, and 8 seconds is the hard ceiling either way.
       window.setTimeout(() => {
         if (!busyRef.current) release(el)
       }, 400)
@@ -75,18 +95,35 @@ export default function GlobalProgress() {
     }
 
     function onClick(event: MouseEvent) {
+      const el = pressable(event.target)
+
+      if (el) {
+        // A second tap while the first is still working: drop it before it
+        // reaches React or the browser's default action.
+        if (el.classList.contains(BUSY_CLASS)) {
+          event.preventDefault()
+          event.stopImmediatePropagation()
+          return
+        }
+        // Let this click finish dispatching first, then stop taking taps.
+        const target = el
+        window.setTimeout(() => {
+          if (tappedRef.current.has(target)) target.classList.add(BUSY_CLASS)
+        }, 0)
+      }
+
       if (event.defaultPrevented) return
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-      const target = event.target as HTMLElement | null
-      const anchor = target && target.closest ? target.closest("a") : null
+      const node = event.target as HTMLElement | null
+      const anchor = node && node.closest ? node.closest("a") : null
       if (!anchor) return
-      const el = anchor as HTMLAnchorElement
-      if (el.target === "_blank" || el.hasAttribute("download")) return
-      const href = el.getAttribute("href") || ""
+      const link = anchor as HTMLAnchorElement
+      if (link.target === "_blank" || link.hasAttribute("download")) return
+      const href = link.getAttribute("href") || ""
       if (!href || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("tel:")) return
       let url: URL
       try {
-        url = new URL(el.href, window.location.href)
+        url = new URL(link.href, window.location.href)
       } catch {
         return
       }
@@ -113,6 +150,7 @@ export default function GlobalProgress() {
     if (!busy) {
       for (const el of Array.from(tappedRef.current)) {
         el.classList.remove(TAP_CLASS)
+        el.classList.remove(BUSY_CLASS)
         tappedRef.current.delete(el)
       }
     }
