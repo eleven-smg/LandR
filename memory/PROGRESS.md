@@ -3,8 +3,9 @@
 **Plan of record:** the 24-step pack from `project landr.zip`. Added scope from the chat sessions
 is Part 2. No other roadmap.
 
-**Last verified:** 2026-09-26 against `main @ bb021b79` (25 Aug 2026), plus the live Supabase
-project and the 22/25 Aug chat archive.
+**Last verified:** 2026-09-26 against `main @ 0a19c982` (the 26 Sep code session). Database facts
+in `STATE.md` still date from 3 Sep — the Supabase connection is not available in this session, so
+nothing below is freshly DB-verified.
 
 **Status:** `DONE` · `PARTIAL` · `NOT STARTED` · `CANCELLED`
 **Proof:** `LIVE` = verified in production or in the database · `CODE` = in the repo, never
@@ -22,16 +23,16 @@ exercised by a real user · `NONE`
 | 4 | Backgrounds (image/video picker + 4th theme) | DONE | LIVE | Exceeded: 4 themes (`noir`, `blush`, `aurora`, `gold`) **and** 4 whole-page templates. Background crop/zoom added later (A13). |
 | 5 | Button Polish (preview image + size) | DONE | CODE | Per-link preview image, size (`md`), shape (`pill`), colour, subtitle in `edit/page.tsx`. |
 | 6 | Visual Builder (drag reorder & resize) | PARTIAL | LIVE | `edit/Builder.tsx` does the **pack** scope (link buttons, phone-width preview, S/M/L). The client then redefined "visual builder" as a whole-page canvas — tracked separately as **A24, not started**. |
-| 7 | Geoblocking & Smart Routing | DONE | LIVE | Rewritten twice. Now "Countries treated differently": blocked countries see the normal page, only per-link destinations change; redirect demoted to an option. Rotation uses the atomic `next_rotation_index()`. Open mismatch B13 (collections semantics). |
+| 7 | Geoblocking & Smart Routing | DONE | LIVE | Rewritten twice. Blocked countries see the normal page, only per-link destinations change; redirect demoted to an option. Rotation uses the atomic `next_rotation_index()`. B13 is now **decided** (per-link swaps, collections do not own them); the UI still needs B18/B19. |
 | 8 | Custom Domain (+ per-creator subdomains) | NOT STARTED | NONE | Still on `alandr.vercel.app`. Pack flags subdomains may need a paid Vercel plan; Hobby is non-commercial. |
-| 9 | Multi-Client (scoped client logins + Clients overview) | DONE | CODE | **Re-architected:** an `accounts` table with `role` (`admin`/`model`) + Users tab, instead of the pack's `creators.dashboard_password` + shared env password. Auth gate lives once in `app/dashboard/[handle]/layout.tsx`. Never tested with a second real account. |
+| 9 | Multi-Client (scoped client logins + Clients overview) | DONE | CODE | **Re-architected:** an `accounts` table with `role` (`admin`/`model`) + Users tab, instead of the pack's `creators.dashboard_password` + shared env password. Gate lives in `app/dashboard/[handle]/layout.tsx`; since 26 Sep every server action and the export route gate themselves too (F10–F12). Never tested with a second real account. |
 | 10 | Deeper Analytics (top countries + richer dashboard) | DONE | LIVE | Rebuilt on real visitor data: unique visitors, sessions, clicked-nothing, time on page, entry/exit, languages, screens, countries, "which link earns". |
 | 11 | Public Self-Serve Sign-Up | DONE | LIVE | **Deviation:** route is `/register`, not `/signup`; writes `accounts` + a `creators` page. One unidentified extra account exists (see `STATE.md`). |
 | 12 | Rotate Your Secret Keys | CANCELLED | — | Client declined outright (22 Aug, restated later). Keys leaked into the chat archive and the handoff PDF remain live. Do not raise again; recorded in `DECISIONS.md`. |
 | 13 | Analytics Date-Range Picker | DONE | LIVE | **Deviation:** Day / Week / Month / Year tabs instead of 7 / 30 / 90 / All time. |
 | 14 | Best-Time-to-Post Heatmap (7×24) | NOT STARTED | NONE | No heatmap in `app/dashboard/[handle]/page.tsx`. |
-| 15 | Traffic Sources Table (views, clicks & CTR) | PARTIAL | LIVE | Referrer/source breakdowns and per-link click rate shipped; the **Mediums** and **Events** tiles still render "not built yet" because UTM capture and an events table do not exist (blocks on A18/Step 18). |
-| 16 | CSV Export | PARTIAL | CODE | **Deviation:** shipped 3 exports (views, clicks, per-link) via `dashboard/[handle]/export/route.ts`, 20k row cap. The pack's **subscribers CSV is missing**. Route is also unauthenticated — bug B1. |
+| 15 | Traffic Sources Table (views, clicks & CTR) | PARTIAL | LIVE | Referrer/source breakdowns and per-link click rate shipped; the **Mediums** and **Events** tiles still render "not built yet" because UTM capture and an events table do not exist (blocks on A18/Step 18). The reference dashboard shows both tiles, so B12 stands. |
+| 16 | CSV Export | PARTIAL | CODE | **Deviation:** shipped 3 exports (views, clicks, per-link) via `dashboard/[handle]/export/route.ts`, 20k row cap. The pack's **subscribers CSV is missing**. The route was unauthenticated (B1) — fixed 26 Sep by `d56f5952`, logged as F10. |
 | 17 | Live Visitor Counter ("N online now") | NOT STARTED | NONE | — |
 | 18 | UTM Link Builder (`/dashboard/[handle]/utm`) | NOT STARTED | NONE | No `utm/` route. Also blocks Step 15's Mediums tile. |
 | 19 | Scheduled & Expiring Links | PARTIAL | CODE | `starts_at` / `ends_at` columns exist; **nothing filters on them** and there is no `schedule/` UI. |
@@ -56,10 +57,10 @@ Walked turn by turn through the 22 Aug and 25 Aug archive. Source = the turn tha
 | A3 | Fill Ava's blank position-7 link; turn `show_subscribe` on | DONE | LIVE | 22 Aug 8:29 PM |
 | A4 | Real visitor tracking: visitor cookie, session id, duration heartbeat, language, screen | DONE | LIVE | 22 Aug 10:55 PM / 25 Aug 3:39 AM |
 | A5 | Icon upload field (file **or** pasted URL) + add-link section | DONE | LIVE | 22 Aug 10:55 PM |
-| A6 | Geoblocking by world tiers (1st/2nd/3rd) with select/deselect | DONE | LIVE | 22 Aug 10:55 PM → `lib/countryGroups.ts` |
+| A6 | Geoblocking by world tiers (1st/2nd/3rd) with select/deselect | DONE | LIVE | 22 Aug 10:55 PM → `lib/countryGroups.ts` (tiers currently unused by the UI — see B18) |
 | A7 | Link Rotation UI (rotation groups, dropdown) | DONE | LIVE | 22 Aug 10:55 PM |
 | A8 | Remove the duplicated geoblocking section from the editor | DONE | CODE | 22 Aug 10:55 PM |
-| A9 | Collections concept corrected (group pages) | DONE | LIVE | 22 Aug 10:55 PM — but see **B13**: the client's intended meaning (per-collection link destination swaps for blocked countries) is still not what is built |
+| A9 | Collections concept corrected (group pages) | DONE | LIVE | 22 Aug 10:55 PM — **B13 settled 26 Sep** from the reference screenshots: a collection is a group of pages + one optional redirect + an analytics filter. Per-country swaps stay per link. Analytics filter still to build. |
 | A10 | Embed arrangement templates, ~5 layouts, Instagram-picker style | DONE | LIVE | 25 Aug 3:39 AM → 6 layouts shipped |
 | A11 | Section ordering — drag whole sections (header, socials, buttons, subscribe, videos, embeds) | DONE | LIVE | 25 Aug 3:39 AM |
 | A12 | "Template" means the **whole page look**, not the background; 4 templates total | DONE | LIVE | 25 Aug 4:18 PM / 4:58 PM → Classic photo, Spotlight, Mosaic, Glass sheet |
@@ -68,13 +69,13 @@ Walked turn by turn through the 22 Aug and 25 Aug archive. Source = the turn tha
 | A15 | Profile photo tap-to-crop, parity with background | DONE | CODE | 25 Aug 4:58 PM → `saveAvatarFocus` |
 | A16 | Editable email-subscribe style | DONE | CODE | 25 Aug 4:18 PM → `landr_templates_focal_point_subscribe_styles` migration |
 | A17 | Tidier, more compact page editor (collapse the embeds area) | PARTIAL | CODE | 25 Aug 3:39 AM / 4:18 PM — some compaction done, never signed off by the client |
-| A18 | Site-wide tap feedback: tapped control dims and locks; progress bar; hover/focus states | DONE | LIVE | 25 Aug 4:18 PM / 4:58 PM |
+| A18 | Site-wide tap feedback: tapped control dims and locks; progress bar; hover/focus states | DONE | LIVE | 25 Aug 4:18 PM / 4:58 PM — the first implementation (`0630e185`) broke clicks site-wide; fixed 26 Sep by `923ca5d3` (F9) |
 | A19 | Save button must show unsaved → saving → saved, and values must stop reverting | DONE | LIVE | 25 Aug 4:18 PM (3b) → controlled fields + 4-state button |
 | A20 | Live drag reorder instead of up/down arrows (overshoot bug) | DONE | LIVE | 25 Aug 4:58 PM |
 | A21 | Smart deep linking, default on | DONE | LIVE | 25 Aug 4:18 PM → `lib/deeplink.ts`. Per-link overrides still missing (B7) |
 | A22 | Rename "Bounce Rate" → "visits that clicked nothing", measured per session | DONE | LIVE | 25 Aug 6:57 PM |
 | A23 | Case-insensitive handles (`/Ava` broke on Android auto-capitalise) | DONE | LIVE | 25 Aug — all four lookups now `ilike` |
-| **A24** | **Visual page builder — whole-page WYSIWYG canvas: drag *and resize* profile photo, email collector, every element; sizes saved per page** | **NOT STARTED** | NONE | 25 Aug 6:57 PM. Deliberately stopped pending decisions. **Biggest remaining item.** Supersedes Step 6's scope. |
+| **A24** | **Visual page builder — whole-page WYSIWYG canvas: drag *and resize* profile photo, email collector, every element; sizes saved per page** | **NOT STARTED** | NONE | 25 Aug 6:57 PM. **Biggest remaining item.** Supersedes Step 6's scope. Reference answers the email collector (fixed centred card); profile-photo and canvas semantics still open. |
 | A25 | Session hardening (random token, rotation, revocation, `secure` flag) | NOT STARTED | NONE | 25 Aug 6:57 PM → now bugs B3/B4 |
 | A26 | This tracking checklist / persistent memory | DONE | LIVE | Promised 22 Aug 10:01 PM, delivered 26 Sep 2026 |
 | A27 | Local dev on Windows (`C:\Users\Devine\Documents\landr`) | CANCELLED | — | That machine is gone; Vercel is the only compiler |
@@ -84,25 +85,39 @@ Walked turn by turn through the 22 Aug and 25 Aug archive. Source = the turn tha
 
 **Reference products the client is benchmarking against:** `tapforallmylinks.com`,
 `lander.launchyoursocials.com/signin`, and the "rachelfit" bio-page style (now the Spotlight template).
+FanplaceFinder no longer exists in the reference product — nothing to build for it.
 
 ---
 
 ## Part 3 — where we are and what is next
 
-**Last session (25 Aug 2026) ended mid-flow:** it shipped five commits, then listed A24 as the next
-block and asked five decisions. No code has been pushed since. Nothing is half-committed — the
-repo is consistent at `bb021b79`.
+**26 Sep 2026 was the first code session since 25 Aug.** It fixed the site-wide tap/click bug (F9)
+and closed the two P0 authorization holes plus three more that were found while fixing them
+(F10–F12). All of it is **CODE proof only** — there is no typecheck or CI (B14) and the deploy result
+for those commits has not been inspected.
 
-**Queue, in order:**
+**Queue, in order (client-approved 26 Sep):**
 
-1. **P0 security fixes** — `BUGS.md` B1 + B2. Real client analytics and page data are exposed
-   today. One commit, ~30 min. *Awaiting client go-ahead.*
-2. **Infra** — move Supabase off the free tier (B8: the project auto-paused and the live page
-   served database errors for ~3 weeks).
-3. **A24 visual page builder** — blocked on the four open decisions in `DECISIONS.md`.
-4. **A25 / B3 / B4 session + password hardening** — required before ten real model logins exist.
-5. **Finish the partials:** Step 15 (needs Step 18 UTM), Step 16 (subscribers CSV), Step 19
-   (filter on `starts_at`/`ends_at`), Step 22 (write `signup_log`, add rate limit).
-6. **Then the untouched steps:** 14, 17, 18, 20, 21, 23, 24, and 8 when a domain is bought.
-7. **B13** — settle whether collections own the per-country link swaps, then align the UI copy.
-8. Only after LandR is done: `eleven-smg/chatterdesk`.
+1. ~~P0 security fixes (B1 + B2)~~ — **done** 26 Sep, F10–F12.
+2. ~~Tap/Enter bug~~ — **done** 26 Sep, F9.
+3. **Country-rules UI** — B18 + B19: a tick-box per link that reveals a scope dropdown (all flagged
+   countries / a `lib/countryGroups.ts` tier / pick countries) plus the destination URL; remove the
+   stray "Link rotation lives in the Geoblocking tab" line; rename the tab Geoblocking →
+   **Country rules**; drop every "blocked"/block-screen wording, because flagged visitors land on the
+   normal page.
+4. **Collections** — add the "Filter on collection" dropdown to Analytics and relabel the redirect as
+   optional, matching the reference (closes the build side of B13).
+5. **Delete a creator / page** — B17: a control in Users ("who owns which page"), typed-handle
+   confirmation, cascading links, analytics and subscribers. Needed to remove the duplicate
+   `/jaero_yt`, which cannot be deleted today without hand-written SQL.
+6. **Infra** — move Supabase off the free tier (B8: the project auto-paused and the live page served
+   database errors for ~3 weeks).
+7. **A24 visual page builder** — the biggest item; still blocked on the profile-photo resize and
+   canvas decisions in `DECISIONS.md`.
+8. **A25 / B3 / B4 session + password hardening** — required before ten real model logins exist.
+9. **Finish the partials:** Step 15 (needs Step 18 UTM), Step 16 (subscribers CSV), Step 19
+   (filter on `starts_at`/`ends_at`), Step 22 (write `signup_log`, add rate limit), A17 editor
+   compaction.
+10. **Then the untouched steps:** 14, 17, 18, 20, 21, 23, 24, and 8 when a domain is bought.
+11. Housekeeping: A30 delete the stale branch; B14 add a typecheck so "CODE" means compiled.
+12. Only after LandR is done: `eleven-smg/chatterdesk`.
