@@ -81,6 +81,16 @@ const alarm: CSSProperties = {
   fontSize: 12,
   marginBottom: 14,
 }
+const notice: CSSProperties = {
+  background: "rgba(91,127,255,0.10)",
+  border: "1px solid rgba(91,127,255,0.30)",
+  color: "#cdd6f4",
+  borderRadius: 8,
+  padding: "9px 11px",
+  fontSize: 12,
+  marginBottom: 14,
+  lineHeight: 1.5,
+}
 const count: CSSProperties = { color: "#8892a4", fontSize: 12, marginTop: 12 }
 const me: CSSProperties = { color: "#8892a4", fontSize: 12 }
 const pageRow: CSSProperties = { ...rowStyle }
@@ -118,11 +128,13 @@ async function TeamForOwner({
   account,
   creatorId,
   isOwner,
+  message,
 }: {
   handle: string
   account: Account
   creatorId: string
   isOwner: boolean
+  message: string
 }) {
   const { data: pageRow } = await supabaseAdmin
     .from("creators")
@@ -144,6 +156,8 @@ async function TeamForOwner({
         account={account}
         subtitle={isOwner ? "Who works on your page, and your own login" : "Who works on this page"}
       />
+
+      {message ? <div style={notice}>{message}</div> : null}
 
       {claims.length > 0 ? (
         <div style={card}>
@@ -195,13 +209,13 @@ async function TeamForOwner({
               link.status === "pending"
                 ? "Waiting for them to accept"
                 : link.status === "release_requested"
-                  ? "Release requested \u2014 waiting for their approval"
+                  ? "Release requested — waiting for their approval"
                   : link.invitedBy === "creator"
                     ? "Set this page up, so a release needs their approval"
                     : link.workClaim === "approved"
                       ? "Approved as the one doing the work, so a release needs their approval"
                       : link.workClaim === "requested"
-                        ? "Says they do the work \u2014 waiting on the approval above"
+                        ? "Says they do the work — waiting on the approval above"
                         : "Invited by the page owner, who can disconnect any time"
 
             return (
@@ -295,7 +309,7 @@ async function TeamForOwner({
 }
 
 /** The original workspace-wide account management, now admin-only in the UI as well as in the actions. */
-async function TeamForAdmin({ handle, account }: { handle: string; account: Account }) {
+async function TeamForAdmin({ handle, account, message }: { handle: string; account: Account; message: string }) {
   const { data: accounts } = await supabaseAdmin
     .from("accounts")
     .select("id, email, username, name, password, role, created_at")
@@ -316,6 +330,8 @@ async function TeamForAdmin({ handle, account }: { handle: string; account: Acco
   return (
     <div style={wrap}>
       <Header account={account} subtitle="Every login and page in this workspace" />
+
+      {message ? <div style={notice}>{message}</div> : null}
 
       <div style={warn}>
         Passwords are stored and shown in plain text, as the agency asked. Anyone who can open this tab can read every
@@ -438,7 +454,7 @@ async function TeamForAdmin({ handle, account }: { handle: string; account: Acco
               <input type="hidden" name="page_id" value={String(p.id)} />
               <span style={pageName}>
                 {String(p.display_name || p.handle)} <span style={{ color: "#6b7396" }}>/{pageHandle}</span>
-                <span style={rowNote}> {owner ? "\u2014 " + owner : "\u2014 unassigned"}</span>
+                <span style={rowNote}> {owner ? "— " + owner : "— unassigned"}</span>
               </span>
               {isCurrent ? (
                 <span style={rowNote}>This is the dashboard you are in. Delete it from another page.</span>
@@ -467,8 +483,21 @@ async function TeamForAdmin({ handle, account }: { handle: string; account: Acco
   )
 }
 
-export default async function TeamPage({ params }: { params: Promise<{ handle: string }> }) {
+export default async function TeamPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ handle: string }>
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
+}) {
   const { handle } = await params
+  const query = searchParams ? await searchParams : {}
+
+  // The relationship actions now come back to this tab instead of the home
+  // screen, so the confirmation or error they send has to be shown here or it
+  // is lost -- an invite that matched no account would fail silently.
+  const rawMessage = query.msg
+  const message = typeof rawMessage === "string" ? rawMessage : ""
 
   // The layout gates the tabs, but this page reads other people's accounts, so
   // it asks for itself rather than trusting that it was reached through one.
@@ -476,7 +505,7 @@ export default async function TeamPage({ params }: { params: Promise<{ handle: s
   if (!access) redirect("/signin?next=/dashboard/" + handle + "/users")
 
   if (access.account.role === "admin") {
-    return <TeamForAdmin handle={access.creator.handle} account={access.account} />
+    return <TeamForAdmin handle={access.creator.handle} account={access.account} message={message} />
   }
 
   return (
@@ -485,6 +514,7 @@ export default async function TeamPage({ params }: { params: Promise<{ handle: s
       account={access.account}
       creatorId={access.creator.id}
       isOwner={access.isOwner}
+      message={message}
     />
   )
 }

@@ -2,13 +2,32 @@
 
 import { redirect } from "next/navigation"
 import { revalidatePath } from "next/cache"
+import { headers } from "next/headers"
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
 import { getSession } from "@/lib/session"
 import { likeSafeHandle, normalizeHandle, handleProblem, usernameProblem } from "@/lib/handles"
 
-function back(message: string): never {
-  revalidatePath("/dashboard")
-  redirect("/dashboard?msg=" + encodeURIComponent(message))
+/**
+ * Where to send the caller when an action is finished. These actions are used
+ * from the creator home screen and from the Team tab of a page, so a fixed
+ * "/dashboard" threw anyone acting from the tab off the screen they were
+ * working on. The referer is accepted only as an internal dashboard path, so a
+ * crafted one cannot redirect a signed-in user somewhere else.
+ */
+async function currentDashboardPath(): Promise<string> {
+  try {
+    const referer = (await headers()).get("referer") || ""
+    if (!referer) return "/dashboard"
+    const path = new URL(referer).pathname
+    return path === "/dashboard" || path.startsWith("/dashboard/") ? path : "/dashboard"
+  } catch {
+    return "/dashboard"
+  }
+}
+
+function back(message: string, to = "/dashboard"): never {
+  revalidatePath(to)
+  redirect(to + "?msg=" + encodeURIComponent(message))
 }
 
 /**
@@ -18,11 +37,12 @@ function back(message: string): never {
 export async function inviteCreator(formData: FormData) {
   const account = await getSession()
   if (!account) redirect("/signin?next=/dashboard")
+  const to = await currentDashboardPath()
 
   const email = String(formData.get("email") || "")
     .trim()
     .toLowerCase()
-  if (!email || !email.includes("@")) back("Enter the creator's email address.")
+  if (!email || !email.includes("@")) back("Enter the creator's email address.", to)
 
   const { data } = await supabaseAdmin
     .from("accounts")
@@ -31,10 +51,10 @@ export async function inviteCreator(formData: FormData) {
     .limit(2)
 
   const rows = data || []
-  if (rows.length !== 1) back("No single account matches that email.")
+  if (rows.length !== 1) back("No single account matches that email.", to)
 
   const creatorAccountId = String(rows[0].id)
-  if (creatorAccountId === account.id) back("You cannot add yourself.")
+  if (creatorAccountId === account.id) back("You cannot add yourself.", to)
 
   const { data: existing } = await supabaseAdmin
     .from("creator_clients")
@@ -46,8 +66,8 @@ export async function inviteCreator(formData: FormData) {
 
   if (existing) {
     const status = String((existing as Record<string, unknown>).status)
-    if (status === "active") back("That creator already manages your page.")
-    if (status === "pending") back("That request is already waiting to be accepted.")
+    if (status === "active") back("That creator already manages your page.", to)
+    if (status === "pending") back("That request is already waiting to be accepted.", to)
 
     // A previously revoked link is re-opened as a fresh request rather than
     // resurrected as active, so the creator has to accept again. The old work
@@ -67,7 +87,7 @@ export async function inviteCreator(formData: FormData) {
       })
       .eq("id", String((existing as Record<string, unknown>).id))
 
-    back("Request sent again.")
+    back("Request sent again.", to)
   }
 
   await supabaseAdmin.from("creator_clients").insert({
@@ -77,7 +97,7 @@ export async function inviteCreator(formData: FormData) {
     invited_by: "model",
   })
 
-  back("Request sent. The creator has to accept it.")
+  back("Request sent. The creator has to accept it.", to)
 }
 
 /**
@@ -92,12 +112,13 @@ export async function inviteCreator(formData: FormData) {
 export async function respondToRequest(formData: FormData) {
   const account = await getSession()
   if (!account) redirect("/signin?next=/dashboard")
+  const to = await currentDashboardPath()
 
   const linkId = String(formData.get("linkId") || "")
   const accept = String(formData.get("decision") || "") === "accept"
   const claimsWork = String(formData.get("claimWork") || "") === "on"
   const claimNote = String(formData.get("claimNote") || "").trim()
-  if (!linkId) back("Nothing to respond to.")
+  if (!linkId) back("Nothing to respond to.", to)
 
   // Scoped to this creator so a guessed id cannot be answered on someone
   // else's behalf.
@@ -109,7 +130,8 @@ export async function respondToRequest(formData: FormData) {
     .limit(1)
     .maybeSingle()
 
-  if (!link || String((link as Record<string, unknown>).status) !== "pending") back("That request is no longer open.")
+  if (!link || String((link as Record<string, unknown>).status) !== "pending")
+    back("That request is no longer open.", to)
 
   if (!accept) {
     await supabaseAdmin
@@ -118,7 +140,7 @@ export async function respondToRequest(formData: FormData) {
       .eq("id", linkId)
       .eq("creator_account_id", account.id)
 
-    back("Request declined.")
+    back("Request declined.", to)
   }
 
   const now = new Date().toISOString()
@@ -138,6 +160,7 @@ export async function respondToRequest(formData: FormData) {
     claimsWork
       ? "Accepted. She has been asked to confirm that you are the one building the page -- until she approves, she can still disconnect you at any time."
       : "Accepted. The model is now one of your clients.",
+    to,
   )
 }
 
@@ -150,10 +173,11 @@ export async function respondToRequest(formData: FormData) {
 export async function respondToWorkClaim(formData: FormData) {
   const account = await getSession()
   if (!account) redirect("/signin?next=/dashboard")
+  const to = await currentDashboardPath()
 
   const linkId = String(formData.get("linkId") || "")
   const approve = String(formData.get("decision") || "") === "approve"
-  if (!linkId) back("Nothing to respond to.")
+  if (!linkId) back("Nothing to respond to.", to)
 
   const { data: link } = await supabaseAdmin
     .from("creator_clients")
@@ -164,7 +188,7 @@ export async function respondToWorkClaim(formData: FormData) {
     .maybeSingle()
 
   if (!link || String((link as Record<string, unknown>).work_claim) !== "requested") {
-    back("There is no open work claim on that connection.")
+    back("There is no open work claim on that connection.", to)
   }
 
   await supabaseAdmin
@@ -178,6 +202,7 @@ export async function respondToWorkClaim(formData: FormData) {
     approve
       ? "Approved. This creator is building your page, so ending it now needs his agreement."
       : "Declined. He keeps access, and you can still disconnect him at any time.",
+    to,
   )
 }
 
@@ -189,9 +214,10 @@ export async function respondToWorkClaim(formData: FormData) {
 export async function withdrawWorkClaim(formData: FormData) {
   const account = await getSession()
   if (!account) redirect("/signin?next=/dashboard")
+  const to = await currentDashboardPath()
 
   const linkId = String(formData.get("linkId") || "")
-  if (!linkId) back("Nothing to withdraw.")
+  if (!linkId) back("Nothing to withdraw.", to)
 
   await supabaseAdmin
     .from("creator_clients")
@@ -200,7 +226,7 @@ export async function withdrawWorkClaim(formData: FormData) {
     .eq("creator_account_id", account.id)
     .eq("work_claim", "requested")
 
-  back("Claim withdrawn.")
+  back("Claim withdrawn.", to)
 }
 
 /**
@@ -215,10 +241,11 @@ export async function withdrawWorkClaim(formData: FormData) {
 export async function disconnectCreator(formData: FormData) {
   const account = await getSession()
   if (!account) redirect("/signin?next=/dashboard")
+  const to = await currentDashboardPath()
 
   const linkId = String(formData.get("linkId") || "")
   const note = String(formData.get("note") || "").trim()
-  if (!linkId) back("Nothing to disconnect.")
+  if (!linkId) back("Nothing to disconnect.", to)
 
   const { data: link } = await supabaseAdmin
     .from("creator_clients")
@@ -228,7 +255,7 @@ export async function disconnectCreator(formData: FormData) {
     .limit(1)
     .maybeSingle()
 
-  if (!link) back("That connection no longer exists.")
+  if (!link) back("That connection no longer exists.", to)
 
   const row = link as Record<string, unknown>
   const invitedBy = String(row.invited_by)
@@ -237,7 +264,7 @@ export async function disconnectCreator(formData: FormData) {
 
   if (status === "pending") {
     await supabaseAdmin.from("creator_clients").update({ status: "revoked" }).eq("id", linkId).eq("model_account_id", account.id)
-    back("Request withdrawn.")
+    back("Request withdrawn.", to)
   }
 
   // An approved work claim removes the instant disconnect even though she was
@@ -257,10 +284,10 @@ export async function disconnectCreator(formData: FormData) {
       .eq("id", linkId)
       .eq("model_account_id", account.id)
 
-    back("Creator disconnected. They no longer have access.")
+    back("Creator disconnected. They no longer have access.", to)
   }
 
-  if (status === "release_requested") back("Your release request is already with the creator.")
+  if (status === "release_requested") back("Your release request is already with the creator.", to)
 
   await supabaseAdmin
     .from("creator_clients")
@@ -276,6 +303,7 @@ export async function disconnectCreator(formData: FormData) {
     workClaim === "approved" && invitedBy === "model"
       ? "Release requested. You approved that this creator does the work, so he has to approve it."
       : "Release requested. This creator set up your page, so he has to approve it.",
+    to,
   )
 }
 
@@ -283,9 +311,10 @@ export async function disconnectCreator(formData: FormData) {
 export async function approveRelease(formData: FormData) {
   const account = await getSession()
   if (!account) redirect("/signin?next=/dashboard")
+  const to = await currentDashboardPath()
 
   const linkId = String(formData.get("linkId") || "")
-  if (!linkId) back("Nothing to release.")
+  if (!linkId) back("Nothing to release.", to)
 
   const { data: link } = await supabaseAdmin
     .from("creator_clients")
@@ -296,7 +325,7 @@ export async function approveRelease(formData: FormData) {
     .maybeSingle()
 
   if (!link || String((link as Record<string, unknown>).status) !== "release_requested") {
-    back("There is no open release request on that client.")
+    back("There is no open release request on that client.", to)
   }
 
   await supabaseAdmin
@@ -305,16 +334,17 @@ export async function approveRelease(formData: FormData) {
     .eq("id", linkId)
     .eq("creator_account_id", account.id)
 
-  back("Released. The model now runs her page alone.")
+  back("Released. The model now runs her page alone.", to)
 }
 
 /** Creator side: refuse a release request, which puts the link back to active. */
 export async function refuseRelease(formData: FormData) {
   const account = await getSession()
   if (!account) redirect("/signin?next=/dashboard")
+  const to = await currentDashboardPath()
 
   const linkId = String(formData.get("linkId") || "")
-  if (!linkId) back("Nothing to refuse.")
+  if (!linkId) back("Nothing to refuse.", to)
 
   await supabaseAdmin
     .from("creator_clients")
@@ -323,7 +353,7 @@ export async function refuseRelease(formData: FormData) {
     .eq("creator_account_id", account.id)
     .eq("status", "release_requested")
 
-  back("Release refused. The arrangement continues.")
+  back("Release refused. The arrangement continues.", to)
 }
 
 /**
@@ -338,6 +368,7 @@ export async function refuseRelease(formData: FormData) {
 export async function createModelAccount(formData: FormData) {
   const account = await getSession()
   if (!account) redirect("/signin?next=/dashboard")
+  const to = await currentDashboardPath()
 
   const displayName = String(formData.get("displayName") || "").trim()
   const username = normalizeHandle(String(formData.get("username") || ""))
@@ -345,12 +376,12 @@ export async function createModelAccount(formData: FormData) {
   const handle = normalizeHandle(String(formData.get("handle") || ""))
 
   const usernameIssue = usernameProblem(username)
-  if (usernameIssue) back(usernameIssue)
+  if (usernameIssue) back(usernameIssue, to)
 
   const handleIssue = handleProblem(handle)
-  if (handleIssue) back(handleIssue)
+  if (handleIssue) back(handleIssue, to)
 
-  if (password.length < 6) back("Give her a password of at least 6 characters.")
+  if (password.length < 6) back("Give her a password of at least 6 characters.", to)
 
   const { data: takenUser } = await supabaseAdmin
     .from("accounts")
@@ -358,7 +389,7 @@ export async function createModelAccount(formData: FormData) {
     .ilike("username", likeSafeHandle(username))
     .limit(1)
     .maybeSingle()
-  if (takenUser) back("That username is already taken.")
+  if (takenUser) back("That username is already taken.", to)
 
   const { data: takenHandle } = await supabaseAdmin
     .from("creators")
@@ -366,7 +397,7 @@ export async function createModelAccount(formData: FormData) {
     .ilike("handle", likeSafeHandle(handle))
     .limit(1)
     .maybeSingle()
-  if (takenHandle) back("That page address is already taken.")
+  if (takenHandle) back("That page address is already taken.", to)
 
   const { data: created, error } = await supabaseAdmin
     .from("accounts")
@@ -380,7 +411,7 @@ export async function createModelAccount(formData: FormData) {
     .select("id")
     .single()
 
-  if (error || !created) back("Could not create that account.")
+  if (error || !created) back("Could not create that account.", to)
 
   const modelAccountId = String((created as Record<string, unknown>).id)
 
@@ -393,7 +424,7 @@ export async function createModelAccount(formData: FormData) {
   if (pageError) {
     // Do not leave a login with no page behind.
     await supabaseAdmin.from("accounts").delete().eq("id", modelAccountId)
-    back("Could not create that page.")
+    back("Could not create that page.", to)
   }
 
   await supabaseAdmin.from("creator_clients").insert({
