@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
 import { logLinkClick, getRequestMeta } from "@/lib/analytics"
 import { collectionDestinationFor } from "@/lib/collections"
+import { scheduleState } from "@/lib/schedule"
 import { androidIntentFor, appSchemeFor, iosBounceHtml, isAndroid, isInAppBrowser, isIos } from "@/lib/deeplink"
 
 type Destination = { url: string; disabled?: boolean }
@@ -52,6 +53,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   if (!link) {
     return NextResponse.redirect(new URL("/", req.url))
+  }
+
+  // 0) Schedule. The button is already hidden on the page outside its window,
+  // but /go/<id> is a shareable, crawlable URL that outlives the button, so
+  // enforcing it only on the page would make "expired" mean "harder to find".
+  // Send the visitor to the page itself rather than the old destination, and
+  // do not log a click: nobody arrived anywhere.
+  if (scheduleState(link) !== "live") {
+    const { data: owner } = await supabaseAdmin
+      .from("creators")
+      .select("handle")
+      .eq("id", link.creator_id)
+      .single()
+    const home = owner && owner.handle ? "/" + String(owner.handle) : "/"
+    return NextResponse.redirect(new URL(home, req.url))
   }
 
   const m = await getRequestMeta()
