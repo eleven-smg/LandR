@@ -347,13 +347,13 @@ export default async function DashboardHome({
                         {link.status === "pending"
                           ? "Waiting for them to accept"
                           : link.status === "release_requested"
-                            ? "Release requested \\u2014 waiting for their approval"
+                            ? "Release requested \u2014 waiting for their approval"
                             : createdByCreator
                               ? "Set up your page, so a release needs their approval"
                               : link.workClaim === "approved"
                                 ? "You approved that they do the work, so a release needs their approval"
                                 : link.workClaim === "requested"
-                                  ? "Says they do the work \\u2014 your approval is still open"
+                                  ? "Says they do the work \u2014 your approval is still open"
                                   : "You invited them, so you can disconnect any time"}
                       </div>
                     </div>
@@ -381,7 +381,7 @@ export default async function DashboardHome({
             </p>
             {/*
               Placeholders describe the field instead of showing a sample name.
-              A faint "Ava" reads as text that is already typed in.
+              A faint sample name reads as text that is already typed in.
             */}
             <form action={createModelAccount}>
               <div style={formGrid}>
