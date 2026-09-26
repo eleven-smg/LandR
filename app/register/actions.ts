@@ -4,32 +4,35 @@ import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
 import { SESSION_COOKIE } from "@/lib/session"
+import { likeSafeHandle, normalizeHandle, handleProblem } from "@/lib/handles"
 
 const THIRTY_DAYS = 60 * 60 * 24 * 30
-const RESERVED = ["dashboard", "signin", "register", "api", "go", "_next", "favicon.ico"]
-
-function cleanHandle(raw: string) {
-  return raw
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, "")
-    .slice(0, 30)
-}
 
 export async function register(formData: FormData) {
   const email = String(formData.get("email") || "").trim().toLowerCase()
   const password = String(formData.get("password") || "")
   const name = String(formData.get("name") || "").trim()
-  const handle = cleanHandle(String(formData.get("handle") || ""))
+
+  // The handle rules live in lib/handles so the register form, the creator's
+  // "add a model" form and the reserved-route list cannot drift apart.
+  const handle = normalizeHandle(String(formData.get("handle") || ""))
 
   if (!email || !password || !handle) redirect("/register?error=missing")
   if (password.length < 6) redirect("/register?error=short")
-  if (RESERVED.includes(handle)) redirect("/register?error=handle")
+  if (handleProblem(handle)) redirect("/register?error=handle")
 
-  const { data: takenHandle } = await supabaseAdmin.from("creators").select("id").eq("handle", handle).limit(1)
+  const { data: takenHandle } = await supabaseAdmin
+    .from("creators")
+    .select("id")
+    .ilike("handle", likeSafeHandle(handle))
+    .limit(1)
   if (takenHandle && takenHandle.length > 0) redirect("/register?error=handle")
 
-  const { data: takenEmail } = await supabaseAdmin.from("accounts").select("id").ilike("email", email).limit(1)
+  const { data: takenEmail } = await supabaseAdmin
+    .from("accounts")
+    .select("id")
+    .ilike("email", likeSafeHandle(email))
+    .limit(1)
   if (takenEmail && takenEmail.length > 0) redirect("/register?error=email")
 
   const { data: account, error: accountError } = await supabaseAdmin
