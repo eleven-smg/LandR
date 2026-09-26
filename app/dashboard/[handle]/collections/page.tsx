@@ -61,4 +61,3 @@ export default async function CollectionsPage({ params }: { params: Promise<{ ha
     </div>
   )
 }
-}
