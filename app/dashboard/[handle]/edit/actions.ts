@@ -7,10 +7,17 @@ import { clampPercent, clampZoom, normalizeSubscribeStyle, normalizeTemplate } f
 import { requireDashboardAccess } from "@/lib/session"
 import { getRequestMeta } from "@/lib/analytics"
 import { tierForCountry } from "@/lib/subscriberGeo"
+import { WHITELIST_DEFAULTS, mailboxDomain } from "@/lib/mailboxes"
 
 type Social = { platform: string; url: string }
 
-export type SubscribeState = { ok?: boolean; error?: string }
+export type SubscribeState = {
+  ok?: boolean
+  error?: string
+  email?: string
+  /** The editable "want every update?" question, when the page has it on. */
+  ask?: { title: string; note: string; yes: string; no: string; url: string }
+}
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 const NL = String.fromCharCode(10)
@@ -138,6 +145,24 @@ export async function saveProfile(formData: FormData) {
     share_button,
   }
 
+  /**
+   * The whitelist question's wording is editable like the bio, but its inputs
+   * are only added to the editor in the next pass. Until then this block is
+   * skipped entirely when the form did not carry the fields -- reading a
+   * missing checkbox as "off" would quietly switch the question off on every
+   * unrelated profile save, which is exactly the kind of silent regression that
+   * is impossible to notice from the editor.
+   */
+  if (formData.has("whitelist_prompt_title")) {
+    patch.whitelist_prompt_enabled = formData.get("whitelist_prompt_enabled") === "on"
+    patch.whitelist_prompt_title = String(formData.get("whitelist_prompt_title") || "").trim() || null
+    patch.whitelist_prompt_note = String(formData.get("whitelist_prompt_note") || "").trim() || null
+    patch.whitelist_yes_label = String(formData.get("whitelist_yes_label") || "").trim() || null
+    patch.whitelist_no_label = String(formData.get("whitelist_no_label") || "").trim() || null
+    patch.whitelist_from_email = String(formData.get("whitelist_from_email") || "").trim().toLowerCase() || null
+    patch.whitelist_from_name = String(formData.get("whitelist_from_name") || "").trim() || null
+  }
+
   // Only the colour mode touches background_url, so switching to image or video
   // never wipes an uploaded file.
   if (bg_mode === "color" && bg_color) {
@@ -224,7 +249,13 @@ export async function subscribe(_prev: SubscribeState, formData: FormData): Prom
     return { error: "Please enter a valid email." }
   }
 
-  const { data: creator } = await supabaseAdmin.from("creators").select("id").eq("handle", handle).single()
+  const { data: creator } = await supabaseAdmin
+    .from("creators")
+    .select(
+      "id, handle, whitelist_prompt_enabled, whitelist_prompt_title, whitelist_prompt_note, whitelist_yes_label, whitelist_no_label",
+    )
+    .eq("handle", handle)
+    .single()
 
   if (!creator) return { error: "Something went wrong. Try again." }
 
@@ -252,12 +283,55 @@ export async function subscribe(_prev: SubscribeState, formData: FormData): Prom
   if (error) {
     // 23505 is a unique violation: the address is already on the list, which is
     // a success from the visitor's point of view.
-    if (error.code === "23505") return { ok: true }
-    return { error: "Could not subscribe. Please try again." }
+    if (error.code !== "23505") return { error: "Could not subscribe. Please try again." }
   }
 
   refresh(handle)
-  return { ok: true }
+
+  /**
+   * The question that turns a subscriber into a subscriber who actually sees
+   * the mail. Its wording belongs to the creator, so the stored copy wins and
+   * the shared defaults are only a fallback. The walkthrough link carries the
+   * mailbox domain, never the address, so the destination knows it is Gmail
+   * without knowing who subscribed.
+   */
+  if (creator.whitelist_prompt_enabled === false) return { ok: true, email }
+
+  const domain = mailboxDomain(email)
+  return {
+    ok: true,
+    email,
+    ask: {
+      title: String(creator.whitelist_prompt_title || "") || WHITELIST_DEFAULTS.title,
+      note: String(creator.whitelist_prompt_note || "") || WHITELIST_DEFAULTS.note,
+      yes: String(creator.whitelist_yes_label || "") || WHITELIST_DEFAULTS.yes,
+      no: String(creator.whitelist_no_label || "") || WHITELIST_DEFAULTS.no,
+      url: "/" + String(creator.handle || handle) + "/whitelist?mb=" + encodeURIComponent(domain),
+    },
+  }
+}
+
+/**
+ * Records the answer to that question. Open like subscribe itself, because the
+ * visitor has no session: it can only set a flag on a row that matches both the
+ * page's creator and the address typed into that page's own form, and it
+ * returns nothing, so it cannot be used to read a list or reach another page.
+ */
+export async function markUpdatesChoice(handle: string, email: string, wants: boolean): Promise<void> {
+  const address = String(email || "").trim().toLowerCase()
+  if (!address || !address.includes("@")) return
+
+  const { data: creator } = await supabaseAdmin.from("creators").select("id").eq("handle", handle).single()
+  if (!creator) return
+
+  const patch: Record<string, unknown> = { wants_updates: wants }
+  if (wants) patch.whitelist_opened_at = new Date().toISOString()
+
+  await supabaseAdmin
+    .from("subscribers")
+    .update(patch)
+    .eq("creator_id", creator.id)
+    .eq("email", address)
 }
 
 export async function uploadVideo(formData: FormData) {

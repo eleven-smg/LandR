@@ -1,7 +1,7 @@
 "use client"
 
 import { useActionState, useState } from "react"
-import { subscribe, type SubscribeState } from "../dashboard/[handle]/edit/actions"
+import { markUpdatesChoice, subscribe, type SubscribeState } from "../dashboard/[handle]/edit/actions"
 
 type Props = {
   handle: string
@@ -21,7 +21,51 @@ const submit =
 export default function SubscribeForm({ handle, title, note, style, buttonText, askName, avatar }: Props) {
   const [state, formAction, pending] = useActionState<SubscribeState, FormData>(subscribe, {})
   const [open, setOpen] = useState(false)
+  const [answered, setAnswered] = useState(false)
+  const [going, setGoing] = useState(false)
   const label = buttonText || (style === "pill" ? "Subscribe" : "Notify me")
+
+  const ask = state.ok && state.ask && !answered ? state.ask : null
+
+  /**
+   * Yes means the subscriber wants to be walked through trusting the sender, so
+   * the answer is recorded and the walkthrough opens. The recording is not
+   * allowed to block the redirect: if it fails the visitor still gets the
+   * instructions, which is the part that matters to them.
+   */
+  async function answer(wants: boolean) {
+    setGoing(wants)
+    try {
+      await markUpdatesChoice(handle, state.email || "", wants)
+    } catch {
+      // Recording the preference is a nice-to-have; never strand the visitor.
+    }
+    if (wants && state.ask) {
+      window.location.href = state.ask.url
+      return
+    }
+    setGoing(false)
+    setAnswered(true)
+  }
+
+  const askCard = ask ? (
+    <div className="w-full rounded-2xl border border-white/15 bg-white/5 p-5 text-center">
+      <p className="text-[15px] font-semibold text-white">{ask.title}</p>
+      {ask.note ? <p className="mt-1 text-sm text-white/60">{ask.note}</p> : null}
+      <div className="mt-4 flex flex-col gap-2">
+        <button type="button" disabled={going} onClick={() => answer(true)} className={submit}>
+          {going ? "One moment..." : ask.yes}
+        </button>
+        <button
+          type="button"
+          onClick={() => answer(false)}
+          className="rounded-full px-5 py-2 text-sm font-medium text-white/50 transition hover:text-white"
+        >
+          {ask.no}
+        </button>
+      </div>
+    </div>
+  ) : null
 
   const done = (
     <div className="w-full rounded-2xl border border-emerald-400/25 bg-emerald-400/10 p-5 text-center">
@@ -68,38 +112,64 @@ export default function SubscribeForm({ handle, title, note, style, buttonText, 
               {avatar ? (
                 <img src={avatar} alt="" className="mx-auto h-16 w-16 rounded-full object-cover" />
               ) : null}
-              <p className="mt-3 text-base font-bold">{title}</p>
-              {note ? <p className="mt-1 text-sm text-black/60">{note}</p> : null}
-              {state.ok ? (
-                <p className="mt-5 text-[15px] font-semibold text-emerald-600">You&rsquo;re on the list &#10003;</p>
+              {ask ? (
+                <div className="mt-4">
+                  <p className="text-base font-bold">{ask.title}</p>
+                  {ask.note ? <p className="mt-1 text-sm text-black/60">{ask.note}</p> : null}
+                  <div className="mt-5 flex flex-col gap-2">
+                    <button
+                      type="button"
+                      disabled={going}
+                      onClick={() => answer(true)}
+                      className="w-full rounded-full bg-black px-5 py-3 text-[15px] font-semibold text-white transition hover:brightness-125 active:scale-95 disabled:opacity-50"
+                    >
+                      {going ? "One moment..." : ask.yes}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => answer(false)}
+                      className="w-full rounded-full px-5 py-2 text-sm font-medium text-black/50 transition hover:text-black"
+                    >
+                      {ask.no}
+                    </button>
+                  </div>
+                </div>
               ) : (
-                <form action={formAction} className="mt-5 flex flex-col gap-3 text-left">
-                  <input type="hidden" name="handle" value={handle} />
-                  {askName ? (
-                    <input
-                      name="name"
-                      autoComplete="given-name"
-                      placeholder="First name"
-                      className="w-full rounded-full border border-black/15 px-4 py-3 text-[15px] outline-none focus:border-black/50"
-                    />
-                  ) : null}
-                  <input
-                    name="email"
-                    type="email"
-                    required
-                    autoComplete="email"
-                    placeholder="Email"
-                    className="w-full rounded-full border border-black/15 px-4 py-3 text-[15px] outline-none focus:border-black/50"
-                  />
-                  <button
-                    type="submit"
-                    disabled={pending}
-                    className="w-full rounded-full bg-black px-5 py-3 text-[15px] font-semibold text-white transition hover:brightness-125 active:scale-95 disabled:opacity-50"
-                  >
-                    {pending ? "Adding..." : label}
-                  </button>
-                  {state.error ? <p className="text-center text-sm text-red-500">{state.error}</p> : null}
-                </form>
+                <>
+                  <p className="mt-3 text-base font-bold">{title}</p>
+                  {note ? <p className="mt-1 text-sm text-black/60">{note}</p> : null}
+                  {state.ok ? (
+                    <p className="mt-5 text-[15px] font-semibold text-emerald-600">You&rsquo;re on the list &#10003;</p>
+                  ) : (
+                    <form action={formAction} className="mt-5 flex flex-col gap-3 text-left">
+                      <input type="hidden" name="handle" value={handle} />
+                      {askName ? (
+                        <input
+                          name="name"
+                          autoComplete="given-name"
+                          placeholder="First name"
+                          className="w-full rounded-full border border-black/15 px-4 py-3 text-[15px] outline-none focus:border-black/50"
+                        />
+                      ) : null}
+                      <input
+                        name="email"
+                        type="email"
+                        required
+                        autoComplete="email"
+                        placeholder="Email"
+                        className="w-full rounded-full border border-black/15 px-4 py-3 text-[15px] outline-none focus:border-black/50"
+                      />
+                      <button
+                        type="submit"
+                        disabled={pending}
+                        className="w-full rounded-full bg-black px-5 py-3 text-[15px] font-semibold text-white transition hover:brightness-125 active:scale-95 disabled:opacity-50"
+                      >
+                        {pending ? "Adding..." : label}
+                      </button>
+                      {state.error ? <p className="text-center text-sm text-red-500">{state.error}</p> : null}
+                    </form>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -109,6 +179,7 @@ export default function SubscribeForm({ handle, title, note, style, buttonText, 
   }
 
   if (style === "bar") {
+    if (ask) return <div className="mt-6 w-full">{askCard}</div>
     if (state.ok) return <div className="mt-6 w-full">{done}</div>
     return (
       <form action={formAction} className="mt-6 flex w-full flex-col gap-2 sm:flex-row">
@@ -123,6 +194,7 @@ export default function SubscribeForm({ handle, title, note, style, buttonText, 
     )
   }
 
+  if (ask) return <div className="mt-8 w-full">{askCard}</div>
   if (state.ok) return <div className="mt-8 w-full">{done}</div>
 
   return (
