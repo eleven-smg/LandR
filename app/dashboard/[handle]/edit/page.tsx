@@ -136,7 +136,8 @@ const tag: CSSProperties = { fontSize: 11, color: "#9aa4c2", background: "#23294
 export default async function EditPage({ params }: { params: Promise<{ handle: string }> }) {
   const { handle } = await params
 
-  // Matched without case, so /dashboard/Ava/edit opens the same page as /ava.
+  // Matched without case, so /dashboard/Handle/edit opens the same page as the
+  // lowercase one.
   const { data: creator } = await supabaseAdmin
     .from("creators")
     .select("*")
@@ -492,8 +493,8 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
               ))}
               <ActionForm action={addSocial} style={arow} resetOnSave>
                 <input type="hidden" name="handle" value={creator.handle} />
-                <input style={pin} name="platform" placeholder="instagram" />
-                <input style={uin} name="url" placeholder="https://instagram.com/ava" />
+                <input style={pin} name="platform" placeholder="platform name" />
+                <input style={uin} name="url" placeholder="paste the full link to your profile" />
                 <SaveButton label="Add" variant="ghost" />
               </ActionForm>
               <p style={hint}>
