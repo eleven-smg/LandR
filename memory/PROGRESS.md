@@ -3,10 +3,10 @@
 **Plan of record:** the 24-step pack from `project landr.zip`. Added scope from the chat sessions
 is Part 2. No other roadmap.
 
-**Last verified:** 2026-09-26 against `main @ 5abd8b6f` (the subscribers CSV; memory commits land
-after each code commit). Schema facts in `STATE.md` are live-verified as of Block 4 on 26 Sep; row
-counts still date from 3 Sep and **cannot be refreshed** — the Supabase MCP server has not been
-connected since that block.
+**Last verified:** 2026-09-26 against `main @ c78d26d2` (Step 19 schedule enforcement; memory
+commits land after each code commit). Schema facts in `STATE.md` are live-verified as of Block 4 on
+26 Sep; row counts still date from 3 Sep and **cannot be refreshed** — the Supabase MCP server has
+not been connected since that block.
 
 **Status:** `DONE` · `PARTIAL` · `NOT STARTED` · `CANCELLED`
 **Proof:** `LIVE` = verified in production or in the database · `CODE` = in the repo, never
@@ -24,7 +24,7 @@ exercised by a real user · `NONE`
 | 4 | Backgrounds (image/video picker + 4th theme) | DONE | LIVE | Exceeded: 4 themes (`noir`, `blush`, `aurora`, `gold`) **and** 4 whole-page templates. Background crop/zoom added later (A13). |
 | 5 | Button Polish (preview image + size) | DONE | CODE | Per-link preview image, size (`md`), shape (`pill`), colour, subtitle in `edit/page.tsx`. |
 | 6 | Visual Builder (drag reorder & resize) | PARTIAL | LIVE | `edit/Builder.tsx` does the **pack** scope (link buttons, phone-width preview, S/M/L). The client then redefined "visual builder" as a whole-page canvas — tracked separately as **A24, not started**. |
-| 7 | Geoblocking & Smart Routing | DONE | CODE | Rewritten three times. Flagged countries see the normal page, only per-link destinations change; redirect demoted to an option. Rotation uses the atomic `next_rotation_index()`. The free-text rule box was replaced 26 Sep by `edit/CountryRules.tsx` (F16) and the tab renamed **Country rules** (F17). Since `62c8463d` the resolution order in `/go/[id]` is **per-link rule → collection destination → rotation → link default** (see C4). The public marketing home went on advertising "geoblocking" for a month after the behaviour changed, corrected 26 Sep by `3efb889a` (F28). CODE only. |
+| 7 | Geoblocking & Smart Routing | DONE | CODE | Rewritten three times. Flagged countries see the normal page, only per-link destinations change; redirect demoted to an option. Rotation uses the atomic `next_rotation_index()`. The free-text rule box was replaced 26 Sep by `edit/CountryRules.tsx` (F16) and the tab renamed **Country rules** (F17). Since `62c8463d` the resolution order in `/go/[id]` is **per-link rule → collection destination → rotation → link default** (see C4); `dea5395b` put the schedule check ahead of all four. CODE only. |
 | 8 | Custom Domain (+ per-creator subdomains) | NOT STARTED | NONE | Still on `alandr.vercel.app`. Pack flags subdomains may need a paid Vercel plan; Hobby is non-commercial. |
 | 9 | Multi-Client (scoped client logins + Clients overview) | DONE | CODE | **Re-architected twice.** An `accounts` table with `role` (`admin`/`model`/`creator`) replaced the pack's shared env password; then the 26 Sep creator work added a creator home, `creator_clients`, compare-models, the work claim and the rebuilt Team tab (C1–C7, the last of them F23). Gate lives in `app/dashboard/[handle]/layout.tsx`; every server action and the export route gate themselves too (F10–F12). Never tested with a second real account. |
 | 10 | Deeper Analytics (top countries + richer dashboard) | DONE | LIVE | Rebuilt on real visitor data: unique visitors, sessions, clicked-nothing, time on page, entry/exit, languages, screens, countries, "which link earns". "Filter on collection" added 26 Sep (F14, CODE) and scoped to the viewer the same day (F24). |
@@ -36,7 +36,7 @@ exercised by a real user · `NONE`
 | 16 | CSV Export | DONE | CODE | Four exports via `dashboard/[handle]/export/route.ts`, 20k row cap: views, clicks, per-link, and the pack's **subscribers list**, added 26 Sep by `5abd8b6f` (F30). All four follow the collection filter and name each row's page (F25). The subscribers CSV **ignores the date tabs on purpose** — a mailing list cut to seven days looks complete and is not — so it downloads the whole list, the screen says so, and its filename carries no range. Unsubscribes are exported and marked, which is how B26 was found. The route was unauthenticated (B1) — fixed 26 Sep by `d56f5952`, logged as F10. |
 | 17 | Live Visitor Counter ("N online now") | NOT STARTED | NONE | — |
 | 18 | UTM Link Builder (`/dashboard/[handle]/utm`) | NOT STARTED | NONE | No `utm/` route. Also blocks Step 15's Mediums tile. |
-| 19 | Scheduled & Expiring Links | PARTIAL | CODE | `starts_at` / `ends_at` columns exist; **nothing filters on them** and there is no `schedule/` UI. |
+| 19 | Scheduled & Expiring Links | PARTIAL | CODE | **Half shipped 26 Sep.** `starts_at` / `ends_at` had existed since August with **nothing reading them** — the F22/F29 defect class. New `lib/schedule.ts` (`scheduleState`, `isLinkLive`) is the single seam: `app/[handle]/page.tsx` filters buttons, videos and embeds through it (`c78d26d2`), and `/go/[id]` refuses an out-of-window link before any other rule and **does not log a click**, because the `/go` URL is shareable and crawlable, so hiding the button alone would make "expired" mean "harder to find" (`dea5395b`). Both bounds are optional and every existing row has neither, so live behaviour is unchanged; an unparseable date is treated as no bound and logged, since a typo must not delete a button. `?preview=1` still shows everything. **Missing half: the editor has no date fields**, so nothing can set the columns yet — the mirror of F18, and the reason this stays PARTIAL and must not be described to the client as done. |
 | 20 | A/B Testing (variant performance) | NOT STARTED | NONE | No `experiments/` route. Depends on Step 7 rotation, which is built. |
 | 21 | QR Code | NOT STARTED | NONE | No `qr/` route. Pack's third-party QR service must be replaced with local generation (see `DECISIONS.md`). |
 | 22 | Signup Guardrails (rate-limit + reserved handles) | DONE | CODE | Reserved handles + handle sanitising + duplicate email/handle checks are in `app/register/actions.ts`. The missing half, **rate limiting**, shipped 26 Sep as F29 (`d721982b`): `lib/signupLimit.ts` allows 3 signups per IP per hour and 8 per day, writes the long-unused `signup_log` table, and the register page explains the refusal. Fails open on a read error, by design. |
@@ -106,7 +106,7 @@ FanplaceFinder no longer exists in the reference product — nothing to build fo
 
 ## Part 3 — where we are and what is next
 
-**26 Sep 2026 was the first code session since 25 Aug**, and it ran in eight blocks: the site-wide
+**26 Sep 2026 was the first code session since 25 Aug**, and it ran in nine blocks: the site-wide
 tap/click bug (F9) and the authorization sweep (F10–F12); the reference-driven UI work (F14–F17);
 the creator/model architecture (C1–C3); the client's 12:15 list — favicon (F20), the sign-in autofill
 scare (F19, never a leak), collections that actually do something (F18/F21, C4–C5) and the work claim
@@ -114,11 +114,12 @@ scare (F19, never a leak), collections that actually do something (F18/F21, C4�
 (F24/F25); the three small ones — the unstyled `.nav-current` label (F26), the Team tab throwing you
 off the tab when you acted on it (F27), and the residual "blocked" copy sweep, which found its one
 real survivor on the **public marketing home** (F28); the signup rate limit that closed the only
-remaining P1 reachable without a database connection (F29); and last the **subscribers CSV** (F30),
-which retired the oldest partial in the pack and turned up B26 on the way. Migrations are
-DB-verified and the Team tab's admin view was seen rendering live; **every other line of code is
-CODE proof only** — there is a typecheck workflow but no tool here can read its result (B14), and
-the deploy has not been walked.
+remaining P1 reachable without a database connection (F29); the **subscribers CSV** (F30), which
+retired the oldest partial in the pack and turned up B26 on the way; and last **Step 19's
+enforcement half** (`dea5395b` + `c78d26d2`), which made the August schedule columns mean something
+to a visitor for the first time. Migrations are DB-verified and the Team tab's admin view was seen
+rendering live; **every other line of code is CODE proof only** — there is a typecheck workflow but
+no tool here can read its result (B14), and the deploy has not been walked.
 
 **Two limits on the later blocks.** The **Supabase MCP server is not connected**, so there has been
 no database read, row count or migration since Block 4 — which is why `/jaero_yt` is still there.
@@ -146,22 +147,27 @@ and the domain all say **LandR**. F28 unified it on LandR on that evidence. Stil
    (F29, `d721982b`). No migration was needed; the table had existed unused since August.
 8. ~~Step 16 — the pack's missing subscribers CSV~~ — **done** 26 Sep (F30, `5abd8b6f`). Step 16 is
    no longer a partial.
-9. **Verify on the deploy.** Nothing except the Team tab's admin view has been clicked: favicon,
-   empty password field, a country rule, the collection filter **and a collection CSV**, the new
-   **subscribers CSV**, one page deletion, creator home, compare, the three collection behaviours,
-   an accept-with-claim → approve → blocked disconnect, the Team tab on a model login, the
-   `.nav-current` label, the Team tab staying put after an action, the reworded home page, and one
-   `/register` signup (which should now leave a `signup_log` row).
-10. Delete the duplicate `/jaero_yt` page (possible in the product since F15, still not done; needs
+9. ~~Step 19, enforcement half — nothing read `starts_at` / `ends_at`~~ — **done** 26 Sep
+   (`dea5395b` + `c78d26d2`), behind the one `lib/schedule.ts` seam, page and `/go` both.
+10. **Step 19, second half — schedule fields in the editor.** Until a date can be typed, the
+    enforcement is inert and the step stays PARTIAL. Needs `edit/page.tsx` (per-link start/end
+    inputs plus a Scheduled/Expired badge) and `updateLink` in `edit/actions.ts`; no migration.
+    **The next unblocked build item.**
+11. **Verify on the deploy.** Nothing except the Team tab's admin view has been clicked: favicon,
+    empty password field, a country rule, the collection filter **and a collection CSV**, the new
+    **subscribers CSV**, one page deletion, creator home, compare, the three collection behaviours,
+    an accept-with-claim → approve → blocked disconnect, the Team tab on a model login, the
+    `.nav-current` label, the Team tab staying put after an action, the reworded home page, and one
+    `/register` signup (which should now leave a `signup_log` row).
+12. Delete the duplicate `/jaero_yt` page (possible in the product since F15, still not done; needs
     Supabase or the admin UI).
-11. **Infra** — move Supabase off the free tier (B8: the project auto-paused and the live page served
+13. **Infra** — move Supabase off the free tier (B8: the project auto-paused and the live page served
     database errors for ~3 weeks).
-12. **A24 visual page builder** — the biggest item; still blocked on the profile-photo resize and
+14. **A24 visual page builder** — the biggest item; still blocked on the profile-photo resize and
     canvas decisions in `DECISIONS.md`.
-13. **A25 / B3 / B4 session + password hardening** — required before ten real model logins exist.
-14. **Finish the partials:** Step 15 (needs Step 18 UTM), Step 19 (filter on `starts_at`/`ends_at`),
-    A17 editor compaction.
-15. **Then the untouched steps:** 14, 17, 18, 20, 21, 23, 24, and 8 when a domain is bought. Step 24
+15. **A25 / B3 / B4 session + password hardening** — required before ten real model logins exist.
+16. **Finish the other partials:** Step 15 (needs Step 18 UTM) and A17 editor compaction.
+17. **Then the untouched steps:** 14, 17, 18, 20, 21, 23, 24, and 8 when a domain is bought. Step 24
     should not ship before B26 (no unsubscribe path exists).
-16. Housekeeping: A30 delete the stale branch; B5 regenerate `sql/schema.sql` from the live database.
-17. Only after LandR is done: `eleven-smg/chatterdesk`.
+18. Housekeeping: A30 delete the stale branch; B5 regenerate `sql/schema.sql` from the live database.
+19. Only after LandR is done: `eleven-smg/chatterdesk`.
