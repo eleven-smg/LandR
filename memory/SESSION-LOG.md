@@ -232,6 +232,64 @@ pushing it — the same discipline that caught the stray brace in `7ae2484e`.
 `app/dashboard/actions.ts`, which redirects to `/dashboard?msg=…`, so acting from the tab throws the
 user out to the creator home — logged as **B25** (P2).
 
+### Block 6 — the three small ones: `.nav-current`, the Team-tab redirect, and the public copy sweep
+
+The client asked for the three remaining small bugs to be taken together.
+
+| SHA | What |
+| --- | --- |
+| `82a2f365` | `app/dashboard/dashboard.css` — `.nav-current` styled as a small uppercase label with the nav's 20px padding, a matching transparent 3px left border, `text-overflow: ellipsis`, and hidden with `.nav-item span` / `.user-info` in the `max-width: 900px` query — closes **B23** → F26 |
+| `d65323d7` | `app/dashboard/actions.ts` — `back(message, to)` plus `currentDashboardPath()` read from the referer; `users/page.tsx` renders `searchParams.msg` in a notice card in both branches — closes **B25** → F27 |
+| `5b7a6694` | `memory/BUGS.md` — F26/F27, the `.nav-current` correction, the cached-fetch rule and a new Retracted row |
+| `3efb889a` | `app/page.tsx` — the public marketing home reworded — closes **B19** → F28 |
+| `52c8eecb` | `memory/BUGS.md` — B19 → F28 with the full sweep list, plus the signed-out-surface rule |
+
+**`.nav-current` was filed as the wrong element.** The active tab *is* styled, by `.nav-item.active`.
+`.nav-current` is the separate label `Sidebar.tsx` prints above the tabs with the current model's
+name, and it only renders when `showHome` is true — i.e. only for an account that manages more than
+one page, which is why it was never noticed on the single-page admin view. Lesson in `BUGS.md`: read
+what the class is for before filing the symptom.
+
+**A redirect written for one screen is a bug on the second (F27).** Every action in
+`app/dashboard/actions.ts` ended in `back()`, which hardcoded `redirect("/dashboard?msg=…")` because
+it was written for the creator home, so a model who approved or declined a work claim from
+`/dashboard/<handle>/users` landed on a different screen. Found while fixing: the Team tab never read
+`?msg` at all, so simply returning to it would have swallowed every confirmation and error —
+including `inviteCreator`'s "No single account matches that email", the only feedback that form has.
+The referer is accepted only when the path is `/dashboard` or starts with `/dashboard/`, so a crafted
+referer cannot bounce a signed-in user off-site. The creator home is unaffected: from there the
+referer *is* `/dashboard`.
+
+**The copy sweep's one real survivor was the most public page in the product (F28).** Read and
+confirmed clean: dashboard `layout.tsx`, `Sidebar.tsx`, the public page `app/[handle]/page.tsx`,
+`edit/page.tsx`, `edit/CountryRules.tsx`, `geoblocking/page.tsx`, `geoblocking/CountryPicker.tsx`,
+`RotationGroups.tsx`, `collections/CollectionsUI.tsx`, `app/dashboard/page.tsx`, `/signin` and
+`/register`. The only survivors there are deliberate: the `blocked_countries` /
+`blocked_redirect_url` columns, the form field names that match them, and the `geoblocking` route
+slug. `app/page.tsx` — the signed-out marketing home, the surface no rewording pass ever touched —
+was still selling "geoblocking" in its metadata and promising you could "block them and redirect the
+whole group at once". Two further stale claims surfaced in the same read: Collections was described
+as "a whole roster shares one redirect", which is the pages-versus-visitors conflation behind the F18
+confusion, and the feature list said "three page templates" when four have shipped since 25 Aug. All
+fixed in one commit, and a comment above `FEATURES` now records that no copy there may promise a
+visitor is blocked.
+
+**The brand was inconsistent and I picked one.** The home page said **Lander** in its title, nav and
+footer while the tab title, `/signin`, `/register`, the creator home, the sidebar, the public page
+footer and `alandr.vercel.app` all say **LandR**. Unified on LandR. That call was made on the
+evidence, not by the client — it is an open question for him.
+
+**A false P0 nearly filed.** `web.loadPage` returned "This page does not exist." for `/ava`, which
+would have been a production outage. The same fetcher returned the **create-next-app starter** for
+`/`, which this repo has not contained since its first commits — so both responses were cached
+crawls, not live requests. Nothing was filed; the near-miss is in the Retracted table and the rule is
+now in `BUGS.md`: cached fetches are not evidence of production state in either direction, and the
+tell is an artefact the repo no longer contains.
+
+**Supabase has been unreachable since Block 4** (`connections.supabase` errors "not available in
+script mode"), so there has been no row count, read or migration in Blocks 5–6, and the duplicate
+`/jaero_yt` page still cannot be deleted from here.
+
 ## 2026-09-26 (morning) — audit, benchmark recovery, memory system
 
 - Located the plan of record: the client supplied `project landr.zip` (24 step PDFs + 24 TEST
