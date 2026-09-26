@@ -4,22 +4,37 @@ import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
 import { SESSION_COOKIE } from "@/lib/session"
+import { likeSafeHandle } from "@/lib/handles"
 
 const THIRTY_DAYS = 60 * 60 * 24 * 30
 
 export async function signIn(formData: FormData) {
-  const email = String(formData.get("email") || "")
-    .trim()
-    .toLowerCase()
+  // A model created by a creator has a username and no email, so the one field
+  // accepts either. "email" is still read as a fallback for any cached form.
+  const identifier = String(formData.get("identifier") || formData.get("email") || "").trim()
   const password = String(formData.get("password") || "")
   const next = String(formData.get("next") || "")
 
-  if (!email || !password) redirect("/signin?error=1")
+  if (!identifier || !password) redirect("/signin?error=1")
 
-  const { data } = await supabaseAdmin.from("accounts").select("id, password").ilike("email", email).limit(1)
+  const column = identifier.includes("@") ? "email" : "username"
 
-  const account = data && data.length > 0 ? data[0] : null
-  if (!account || String(account.password) !== password) redirect("/signin?error=1")
+  // likeSafeHandle escapes % and _ so a typed wildcard cannot widen the match.
+  const { data } = await supabaseAdmin
+    .from("accounts")
+    .select("id, password")
+    .ilike(column, likeSafeHandle(identifier))
+    .limit(2)
+
+  const rows = data || []
+
+  // Exactly one match required. Historic rows could share an email because the
+  // table had no unique constraint until 26 Sep; an ambiguous login is refused
+  // rather than guessed.
+  if (rows.length !== 1) redirect("/signin?error=1")
+
+  const account = rows[0]
+  if (String(account.password) !== password) redirect("/signin?error=1")
 
   const store = await cookies()
   store.set(SESSION_COOKIE, String(account.id), {
@@ -31,22 +46,11 @@ export async function signIn(formData: FormData) {
 
   if (next.startsWith("/dashboard")) redirect(next)
 
-  const { data: pages } = await supabaseAdmin
-    .from("creators")
-    .select("handle")
-    .eq("account_id", account.id)
-    .order("created_at", { ascending: true })
-    .limit(1)
-
-  if (pages && pages.length > 0) redirect("/dashboard/" + String(pages[0].handle))
-
-  const { data: any_page } = await supabaseAdmin
-    .from("creators")
-    .select("handle")
-    .order("created_at", { ascending: true })
-    .limit(1)
-
-  redirect(any_page && any_page.length > 0 ? "/dashboard/" + String(any_page[0].handle) : "/signin?error=2")
+  // /dashboard decides where to go: straight into the only page, or the home
+  // list for a creator managing several. It used to fall back to the first row
+  // in the whole creators table, which dropped an account with no page of its
+  // own onto somebody else's dashboard.
+  redirect("/dashboard")
 }
 
 export async function signOut() {

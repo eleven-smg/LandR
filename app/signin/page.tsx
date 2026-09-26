@@ -87,15 +87,21 @@ export default async function SignInPage({
           <span style={brandName}>LandR</span>
         </div>
         <div style={h1s}>Welcome back</div>
-        <p style={sub}>Sign in with the email and password your agency gave you.</p>
+        <p style={sub}>Sign in with the username or email and the password your agency gave you.</p>
 
-        {error === "1" ? <div style={err}>That email and password combination did not match.</div> : null}
+        {error === "1" ? <div style={err}>That login and password combination did not match.</div> : null}
         {error === "2" ? <div style={err}>Signed in, but no page is assigned to this account yet.</div> : null}
 
         <input type="hidden" name="next" value={next} />
         <label style={lbl}>
-          Email
-          <input style={input} name="email" type="email" autoComplete="username" placeholder="you@agency.com" />
+          Username or email
+          <input
+            style={input}
+            name="identifier"
+            type="text"
+            autoComplete="username"
+            placeholder="ava or you@agency.com"
+          />
         </label>
         <label style={lbl}>
           Password
