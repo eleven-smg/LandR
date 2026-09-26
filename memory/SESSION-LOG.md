@@ -4,9 +4,11 @@ Append one entry per working session, newest first. Always record commit SHAs.
 
 ---
 
-## 2026-09-26 (afternoon) — first code session since 25 Aug: the tap bug + an authorization sweep
+## 2026-09-26 (afternoon) — first code session since 25 Aug: the tap bug, an authorization sweep, then the reference-driven UI work
 
-Client approved code changes ("lets start"). Nine commits on `main`, head was `917494bf` before.
+Client approved code changes ("lets start"). Head was `917494bf` before the session.
+
+### Block 1 — the tap bug and the authorization sweep
 
 | SHA | What |
 | --- | --- |
@@ -36,8 +38,40 @@ by **link id alone**, so any signed-in user could edit any link row by guessing 
 **Lesson recorded in `BUGS.md`:** route handlers and server actions never run a layout, so each one
 needs its own gate.
 
+### Block 2 — country rules, collections, delete-page
+
+| SHA | What |
+| --- | --- |
+| `8de183b3` | `memory/SESSION-LOG.md` split into morning / afternoon blocks |
+| `f15299ee` | `memory/PROGRESS.md` refreshed to `0a19c982`, Part 3 queue re-ordered |
+| `ca011598` | **new** `edit/CountryRules.tsx` — tick box + per-rule scope dropdown (every flagged country / first / second / third world / pick countries), destination URL, country checkbox grid, summary line |
+| `e5da8cfe` | `edit/page.tsx` uses `CountryRules`; free-text rule box and the stray "Link rotation lives in the Geoblocking tab" line removed; section retitled "Country rules for this link" with a count badge |
+| `96d9cc6d` | Geoblocking → **Country rules** in the sidebar and page title (slug kept), `CountryPicker.tsx` reworded to flagged-visitor language, chips amber, `blockAll`/`unblockAll` → `addTier`/`clearTier` (closes **F17**) |
+| `bdda4002` | Analytics **"Filter on collection"** dropdown, admin-gated; `collections/page.tsx` sub copy rewritten (closes **B13** → F14) |
+| `3a1620f5` | `CollectionsUI.tsx` — redirect labelled optional, "blocked"/"block screen" copy gone, note that Analytics can add the group together |
+| `2171e5fd` | Users → **Delete a page**: new admin-only `deletePage` action with typed-handle confirm and child-first cleanup (closes **B17** → F15) |
+
+**Country rules.** `CountryRules.tsx` serialises its rules back into the existing `NG,GH = url` line
+format through a hidden `geo_rules` input, so `saveGeoRules` and the `links.geo_rules` shape are
+untouched and **no migration was needed** — which mattered, because the Supabase MCP server is not
+connected this session. Unticking the box and saving clears the rules.
+
+**Analytics collection filter.** `?collection=<id>` swaps the five `.eq("creator_id", creator.id)`
+filters for `.in("creator_id", ids)` over the collection's pages. It is gated on **admin**, not just
+access: a collection spans pages owned by other people, so without that check one model could read
+another's numbers. A model who passes the parameter is ignored and still sees their own page. An
+empty collection resolves to a sentinel uuid so every figure reads zero instead of silently falling
+back to one page's traffic. CSV export still has no collection parameter — logged as **B20**.
+
+**Delete a page.** Admin-only, the typed handle must match the target row, and the page named in the
+address bar refuses to delete itself (it would pull the dashboard out from under the click). Children
+are removed child-first — `link_clicks`, `page_views`, `subscribers`, `links`, then `creators` —
+because `sql/schema.sql` declares `on delete cascade` but this database has been hand-patched more
+than once. Uploaded media is deliberately left in the bucket. This unblocks removing the duplicate
+`/jaero_yt` page, which **has not been done yet**.
+
 **Proof status: CODE only.** There is no typecheck or CI (B14) and the Vercel result for these
-commits has not been inspected. Nothing here is LIVE-verified.
+commits has not been inspected. Nothing in this session is LIVE-verified.
 
 Also settled this session, from the client's four reference screenshots (read as chat attachments):
 
@@ -45,10 +79,11 @@ Also settled this session, from the client's four reference screenshots (read as
   "When someone from a blocked country visits your page, you can redirect them here." Nothing
   per-platform. Reference Analytics has a **"Filter on collection"** dropdown. So a collection is a
   group of pages + one optional redirect + an analytics filter; per-country destination swaps stay
-  **per link**. Ours has grouping and redirect; the analytics filter is missing.
+  **per link**. Both halves are now built.
 - FanplaceFinder is gone from the reference (moved to aicreatormarketplace.com) — nothing to build.
 - Reference Analytics confirms Mediums + Events tiles are expected (B12 stands).
-- Reference Users table: ID, Name, Email (verified tick), Role, Created At; no delete control visible.
+- Reference Users table: ID, Name, Email (verified tick), Role, Created At; no delete control visible
+  — ours now has one anyway, because the duplicate page cannot be removed any other way.
 - The rachelfit email collector is a **fixed centred card** with First Name + Email pill fields —
   answers half of the A24 sizing question.
 - Client's own editor screenshot shows crop reading real values (50% / 18% / 100%), so "crop reads 0"
