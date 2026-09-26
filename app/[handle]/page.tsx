@@ -8,6 +8,7 @@ import ShareButton from "./ShareButton"
 import Tracker from "./Tracker"
 import { normalizeOrder } from "@/lib/sections"
 import { likeSafeHandle } from "@/lib/handles"
+import { loadCollectionSettings, safeExternalUrl } from "@/lib/collections"
 import { clampPercent, clampZoom, normalizeSubscribeStyle, normalizeTemplate } from "@/lib/templates"
 
 export const dynamic = "force-dynamic"
@@ -116,17 +117,32 @@ export default async function CreatorPage({
     const meta = await getRequestMeta()
     const blocked = (creator.blocked_countries || []) as string[]
 
-    // A listed country is only sent away when a redirect URL is actually set.
-    // With the field empty, the visitor sees the normal page and it is the
-    // per-link country rules that change: a Telegram button can point somewhere
-    // else for that country while Instagram stays the same for everybody. That
-    // swap happens in /go/[id], so nothing here needs to know about it.
-    if (meta.country && blocked.includes(meta.country) && creator.blocked_redirect_url) {
-      redirect(String(creator.blocked_redirect_url))
+    // The collection this page belongs to can carry a group default for flagged
+    // countries and a campaign takeover, each behind its own switch. Returns
+    // null for a page in no collection, which is the common case.
+    const collection = await loadCollectionSettings(creator.collection_id)
+
+    // A listed country is only sent away when a redirect URL is actually set,
+    // on the page itself or on its collection. The page's own value wins, so a
+    // group default never overrides a choice made for one page. With both
+    // empty, the visitor sees the normal page and it is the per-link country
+    // rules that change: a Telegram button can point somewhere else for that
+    // country while Instagram stays the same for everybody. That swap happens
+    // in /go/[id], so nothing here needs to know about it.
+    if (meta.country && blocked.includes(meta.country)) {
+      const countryTarget =
+        safeExternalUrl(creator.blocked_redirect_url) || (collection ? collection.countryRedirectUrl : null)
+      if (countryTarget) redirect(countryTarget)
     }
 
     // Logged against the real handle, so /Ava and /ava are one page in analytics.
     viewId = await logPageView(creator.id, "/" + realHandle)
+
+    // Campaign takeover: every visitor to every page in this collection goes to
+    // the one site prepared for the campaign. Deliberately after the view is
+    // logged, so the campaign still reports its traffic, and after the country
+    // rule, so the safety redirect keeps priority.
+    if (collection && collection.takeoverUrl) redirect(collection.takeoverUrl)
   }
 
   const { data: links } = await supabaseAdmin
