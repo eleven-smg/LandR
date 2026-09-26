@@ -95,6 +95,10 @@ export default async function SignInPage({
         <input type="hidden" name="next" value={next} />
         <label style={lbl}>
           Username or email
+          {/*
+            Generic placeholder on purpose: a sample username reads as if the
+            field is already filled in.
+          */}
           <input
             style={input}
             name="identifier"
@@ -102,7 +106,7 @@ export default async function SignInPage({
             autoComplete="username"
             autoCapitalize="none"
             spellCheck={false}
-            placeholder="ava or you@agency.com"
+            placeholder="your username or email"
           />
         </label>
         <label style={lbl}>
@@ -116,7 +120,7 @@ export default async function SignInPage({
             suggested. Saved credentials live in the visitor's own browser
             profile, so this never appeared on anybody else's device.
           */}
-          <input style={input} name="password" type="password" autoComplete="new-password" placeholder="********" />
+          <input style={input} name="password" type="password" autoComplete="new-password" placeholder="your password" />
         </label>
         <button style={btn} type="submit">
           Sign in

@@ -82,26 +82,30 @@ export default async function RegisterPage({
       <form action={register} style={card}>
         <div style={brand}>
           <span style={dot} />
-          <span style={brandName}>Lander</span>
+          <span style={brandName}>LandR</span>
         </div>
         <div style={h1s}>Create your page</div>
         <p style={sub}>One account, one bio page. An admin can add more pages to you later.</p>
 
         {message ? <div style={err}>{message}</div> : null}
 
+        {/*
+          Placeholders are generic on purpose. Real-looking sample names read as
+          pre-filled text and make people think the form already has a value in it.
+        */}
         <label style={lbl}>
           Page name
-          <input style={input} name="handle" placeholder="ava" />
+          <input style={input} name="handle" placeholder="your page name" />
         </label>
         <p style={hint}>This becomes your public link, so keep it short and lowercase.</p>
 
         <label style={lbl}>
           Display name
-          <input style={input} name="name" placeholder="Ava" />
+          <input style={input} name="name" placeholder="the name shown on your page" />
         </label>
         <label style={lbl}>
           Email
-          <input style={input} name="email" type="email" autoComplete="username" placeholder="you@agency.com" />
+          <input style={input} name="email" type="email" autoComplete="username" placeholder="your email address" />
         </label>
         <label style={lbl}>
           Password
