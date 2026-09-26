@@ -20,13 +20,15 @@
 | QR codes (Step 21) | Generate **locally**; do not depend on a free third-party image service | 22 Aug |
 | Vercel MCP | Do not use — read-only and its OAuth auto-registration fails | 3 Sep |
 | chatterdesk | Untouched until LandR is finished | throughout |
-| **What a collection is** | The page owner's **own campaign folder**: group your own pages, one *optional* redirect for flagged-country visitors across the group, and "Filter on collection" on Analytics. Not admin-only, not other people's pages. Per-country destination swaps stay **per link** | 26 Sep |
+| **What a collection is** | The page owner's **own campaign folder**: it groups *your own pages*, never visitors. A page joins one only from the Collections tab. Not admin-only, not other people's pages | 26 Sep |
+| **What a collection can do** | All three, each with **its own switch**, because the client asked for "all and an option to disable each": (1) grouping + "Filter on collection" on Analytics, always on; (2) a **country destination set** — per-platform URLs (Telegram, Instagram, …) that flagged-country visitors get instead of the link's normal destination, matched on `links.collection_key` or, with no tagging at all, on the platform of the link's own destination host; (3) a **campaign takeover** — one URL that sends every visitor to the group's pages straight out, logged first so traffic is still counted, and never under `?preview=1`. A per-link country rule still beats the collection, and a page's own `blocked_redirect_url` beats the group default | 26 Sep |
+| **Who does the work on a page** | The **creator declares it when he accepts her invite** (tick box + optional note). It reaches her as a **request she must approve** — he cannot bind her by himself. Once approved, her instant Disconnect is replaced by Request release, which he approves, exactly as in the creator-created case. If she declines or never answers, the link still goes active and she keeps instant disconnect — so **he learns his standing before putting in the work**, which was the protection asked for. Declining does not remove his access | 26 Sep |
 | **One dashboard = one model** | `/dashboard/ava` is Ava and her team only. You cannot add another model from inside a model dashboard | 26 Sep |
 | **Managing several models** | Needs a **creator account**. Creator home lists his models → tap one → her full dashboard → back to home. Never all models on one dashboard | 26 Sep |
 | **Where the creator home lives** | `/dashboard` itself. A model with one page and no team links is redirected straight into her own dashboard, so nothing changes for her | 26 Sep |
 | **Who owns a page** | **Always the model's account** (`creators.account_id`), even when the creator created her. A creator's reach is a `creator_clients` row, never ownership | 26 Sep |
-| **Model invited the creator** | She can **disconnect at any time**; access ends immediately | 26 Sep |
-| **Creator created the model** | She **cannot** disconnect unilaterally. She can only *request release*, which the creator must approve — so she can pay for release of his work, or start afresh on her own account | 26 Sep |
+| **Model invited the creator** | She can **disconnect at any time**; access ends immediately — unless she has approved his work claim | 26 Sep |
+| **Creator created the model** | She **cannot** disconnect unilaterally. She can only *request release*, which the creator must approve — so she can pay for release of his work, or start afresh on her own account. No work claim is written in this case; building the page is implied by having created it | 26 Sep |
 | **Compare models** | Build it: pick any subset of the creator's models and compare them statistically and graphically | 26 Sep |
 | **Typecheck** | Added as a GitHub Actions workflow (B14). Vercel is no longer the only compiler | 26 Sep |
 
@@ -40,8 +42,10 @@
 3. **Session/password hardening now or later** (B3/B4/A25)? *Recommendation: now, before ten real logins exist.*
 4. **Can models edit their own page, or only view analytics?** Today a model gets the full editor.
 5. **What the Team tab shows a model.** It is now labelled "Team" but still holds the old admin-only
-   user management. *Recommendation: her own team logins plus her creator connections; move
+   user management (B22). *Recommendation: her own team logins plus her creator connections; move
    "Delete a page" out to an admin-only screen.*
 6. **Supabase plan** (B8) — pay, or accept the page breaking after ~1 week of no traffic?
 7. Snapchat's pill colour — client's own pick, still outstanding.
 8. A placeholder profile photo for Ava.
+9. Is the saved flagged-country list intentional (Nigeria, Ghana, Kenya … India, Pakistan,
+   Bangladesh), or left over from testing?
