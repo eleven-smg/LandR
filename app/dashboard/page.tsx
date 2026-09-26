@@ -2,11 +2,13 @@ import type { CSSProperties } from "react"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import { getSession, getManagedPages } from "@/lib/session"
-import { linksAsCreator, linksAsModel, peopleByIds, totalsByCreator } from "@/lib/creatorTeam"
+import { linksAsCreator, linksAsModel, needsReleaseApproval, peopleByIds, totalsByCreator } from "@/lib/creatorTeam"
 import { signOut } from "@/app/signin/actions"
 import {
   inviteCreator,
   respondToRequest,
+  respondToWorkClaim,
+  withdrawWorkClaim,
   disconnectCreator,
   approveRelease,
   refuseRelease,
@@ -47,6 +49,9 @@ const msgBox: CSSProperties = { background: "rgba(91,127,255,0.12)", border: "1p
 const formGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginTop: 6 }
 const emptyNote: CSSProperties = { color: "#6b7396", fontSize: 13, marginTop: 10 }
 const linkBtn: CSSProperties = { ...btn, textDecoration: "none", display: "inline-block" }
+const claimBox: CSSProperties = { border: "1px solid #232940", borderRadius: 10, padding: "10px 12px", marginTop: 4, display: "grid", gap: 8, minWidth: 260 }
+const claimLabel: CSSProperties = { display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12, color: "#c7d2fe", lineHeight: 1.4 }
+const note: CSSProperties = { fontSize: 11, color: "#6b7396", lineHeight: 1.5 }
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).slice(0, 2)
@@ -89,6 +94,9 @@ export default async function DashboardHome({
 
   const requests = creatorLinks.filter((l) => l.status === "pending")
   const releaseRequests = creatorLinks.filter((l) => l.status === "release_requested")
+  // Claims he made that she has not answered yet, and claims she has to answer.
+  const myOpenClaims = creatorLinks.filter((l) => l.workClaim === "requested")
+  const claimsToAnswer = modelLinks.filter((l) => l.workClaim === "requested")
   const ownsAPage = pages.some((p) => p.access === "own")
 
   return (
@@ -129,10 +137,23 @@ export default async function DashboardHome({
                         {person && person.email ? person.email : "wants you to manage her page"}
                       </div>
                     </div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <form action={respondToRequest}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexWrap: "wrap" }}>
+                      <form action={respondToRequest} style={claimBox}>
                         <input type="hidden" name="linkId" value={link.id} />
                         <input type="hidden" name="decision" value="accept" />
+                        <label style={claimLabel}>
+                          <input type="checkbox" name="claimWork" style={{ marginTop: 2 }} />
+                          <span>I am the one who will build and edit this page, not just manage it</span>
+                        </label>
+                        <input
+                          style={{ ...input, marginTop: 0 }}
+                          name="claimNote"
+                          placeholder="What you agreed (optional)"
+                        />
+                        <p style={note}>
+                          If you tick this, she has to approve it. Once she does, she can no longer disconnect you on
+                          her own &mdash; she has to ask, and you decide. Until she approves, she can.
+                        </p>
                         <button style={btn} type="submit">
                           Accept
                         </button>
@@ -145,6 +166,77 @@ export default async function DashboardHome({
                         </button>
                       </form>
                     </div>
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        ) : null}
+
+        {claimsToAnswer.length > 0 ? (
+          <section style={section}>
+            <div style={sectionTitle}>Who is building your page</div>
+            <div style={card}>
+              <p style={{ ...sub, marginTop: 0 }}>
+                This creator says he is the one doing the work on your page. Approve it only if that is what you agreed:
+                after that you cannot disconnect him yourself, you have to ask him and he has to agree. Declining does
+                not remove him &mdash; he keeps access and you keep the right to disconnect any time.
+              </p>
+              {claimsToAnswer.map((link) => {
+                const person = people[link.creatorAccountId]
+                return (
+                  <div key={link.id} style={rowItem}>
+                    <div>
+                      <div style={nameStyle}>{person ? person.label : "A creator"}</div>
+                      <div style={handleStyle}>
+                        {link.workClaimNote ? link.workClaimNote : "claims he builds and edits your page"}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <form action={respondToWorkClaim}>
+                        <input type="hidden" name="linkId" value={link.id} />
+                        <input type="hidden" name="decision" value="approve" />
+                        <button style={btn} type="submit">
+                          Approve
+                        </button>
+                      </form>
+                      <form action={respondToWorkClaim}>
+                        <input type="hidden" name="linkId" value={link.id} />
+                        <input type="hidden" name="decision" value="decline" />
+                        <button style={btnQuiet} type="submit">
+                          Decline
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        ) : null}
+
+        {myOpenClaims.length > 0 ? (
+          <section style={section}>
+            <div style={sectionTitle}>Your work claims</div>
+            <div style={card}>
+              <p style={{ ...sub, marginTop: 0 }}>
+                Waiting for her approval. Until she approves, she can still disconnect you, so hold off on the heavy
+                work.
+              </p>
+              {myOpenClaims.map((link) => {
+                const person = people[link.modelAccountId]
+                return (
+                  <div key={link.id} style={rowItem}>
+                    <div>
+                      <div style={nameStyle}>{person ? person.label : "A model"}</div>
+                      <div style={handleStyle}>Waiting for her to approve that you do the work</div>
+                    </div>
+                    <form action={withdrawWorkClaim}>
+                      <input type="hidden" name="linkId" value={link.id} />
+                      <button style={btnQuiet} type="submit">
+                        Withdraw claim
+                      </button>
+                    </form>
                   </div>
                 )
               })}
@@ -245,6 +337,7 @@ export default async function DashboardHome({
             <div style={card}>
               {modelLinks.map((link) => {
                 const person = people[link.creatorAccountId]
+                const locked = needsReleaseApproval(link)
                 const createdByCreator = link.invitedBy === "creator"
                 return (
                   <div key={link.id} style={rowItem}>
@@ -257,18 +350,18 @@ export default async function DashboardHome({
                             ? "Release requested \u2014 waiting for their approval"
                             : createdByCreator
                               ? "Set up your page, so a release needs their approval"
-                              : "You invited them, so you can disconnect any time"}
+                              : link.workClaim === "approved"
+                                ? "You approved that they do the work, so a release needs their approval"
+                                : link.workClaim === "requested"
+                                  ? "Says they do the work \u2014 your approval is still open"
+                                  : "You invited them, so you can disconnect any time"}
                       </div>
                     </div>
                     {link.status === "release_requested" ? null : (
                       <form action={disconnectCreator}>
                         <input type="hidden" name="linkId" value={link.id} />
                         <button style={btnDanger} type="submit">
-                          {link.status === "pending"
-                            ? "Withdraw"
-                            : createdByCreator
-                              ? "Request release"
-                              : "Disconnect"}
+                          {link.status === "pending" ? "Withdraw" : locked ? "Request release" : "Disconnect"}
                         </button>
                       </form>
                     )}
@@ -317,8 +410,8 @@ export default async function DashboardHome({
             <div style={sectionTitle}>Add a creator to your team</div>
             <div style={card}>
               <p style={{ ...sub, marginTop: 0 }}>
-                Enter a creator&rsquo;s email to ask them to run your page. Nothing is shared until they accept, and you
-                can disconnect them whenever you like.
+                Enter a creator&rsquo;s email to ask them to run your page. Nothing is shared until they accept. You can
+                disconnect them whenever you like, unless you later approve that they are the one building the page.
               </p>
               <form action={inviteCreator} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
                 <label style={{ ...lbl, flex: "1 1 220px" }}>

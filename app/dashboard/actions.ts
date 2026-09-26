@@ -50,10 +50,21 @@ export async function inviteCreator(formData: FormData) {
     if (status === "pending") back("That request is already waiting to be accepted.")
 
     // A previously revoked link is re-opened as a fresh request rather than
-    // resurrected as active, so the creator has to accept again.
+    // resurrected as active, so the creator has to accept again. The old work
+    // claim is cleared with it -- he declares again on the new acceptance.
     await supabaseAdmin
       .from("creator_clients")
-      .update({ status: "pending", invited_by: "model", responded_at: null, release_requested_at: null })
+      .update({
+        status: "pending",
+        invited_by: "model",
+        responded_at: null,
+        release_requested_at: null,
+        work_claim: "none",
+        work_claimed_by: null,
+        work_claim_note: null,
+        work_claimed_at: null,
+        work_decided_at: null,
+      })
       .eq("id", String((existing as Record<string, unknown>).id))
 
     back("Request sent again.")
@@ -69,13 +80,23 @@ export async function inviteCreator(formData: FormData) {
   back("Request sent. The creator has to accept it.")
 }
 
-/** Creator side: accept or decline a model's request. */
+/**
+ * Creator side: accept or decline a model's request.
+ *
+ * On accept he also says whether he is the one who will build and edit the
+ * page. That is only a claim: it is written as "requested" and goes to her for
+ * approval, because he must not be able to lock her in by himself. Either way
+ * the link goes active immediately, so he learns where he stands before he
+ * starts working.
+ */
 export async function respondToRequest(formData: FormData) {
   const account = await getSession()
   if (!account) redirect("/signin?next=/dashboard")
 
   const linkId = String(formData.get("linkId") || "")
   const accept = String(formData.get("decision") || "") === "accept"
+  const claimsWork = String(formData.get("claimWork") || "") === "on"
+  const claimNote = String(formData.get("claimNote") || "").trim()
   if (!linkId) back("Nothing to respond to.")
 
   // Scoped to this creator so a guessed id cannot be answered on someone
@@ -90,22 +111,106 @@ export async function respondToRequest(formData: FormData) {
 
   if (!link || String((link as Record<string, unknown>).status) !== "pending") back("That request is no longer open.")
 
+  if (!accept) {
+    await supabaseAdmin
+      .from("creator_clients")
+      .update({ status: "revoked", responded_at: new Date().toISOString() })
+      .eq("id", linkId)
+      .eq("creator_account_id", account.id)
+
+    back("Request declined.")
+  }
+
+  const now = new Date().toISOString()
+  const update: Record<string, unknown> = { status: "active", responded_at: now }
+
+  if (claimsWork) {
+    update.work_claim = "requested"
+    update.work_claimed_by = "creator"
+    update.work_claim_note = claimNote || null
+    update.work_claimed_at = now
+    update.work_decided_at = null
+  }
+
+  await supabaseAdmin.from("creator_clients").update(update).eq("id", linkId).eq("creator_account_id", account.id)
+
+  back(
+    claimsWork
+      ? "Accepted. She has been asked to confirm that you are the one building the page -- until she approves, she can still disconnect you at any time."
+      : "Accepted. The model is now one of your clients.",
+  )
+}
+
+/**
+ * Model side: approve or decline the creator's claim that he is the one doing
+ * the work. Approving is what makes it binding: from then on she cannot end the
+ * arrangement on her own, she has to ask him. Declining changes nothing about
+ * his access -- he simply keeps no hold over her.
+ */
+export async function respondToWorkClaim(formData: FormData) {
+  const account = await getSession()
+  if (!account) redirect("/signin?next=/dashboard")
+
+  const linkId = String(formData.get("linkId") || "")
+  const approve = String(formData.get("decision") || "") === "approve"
+  if (!linkId) back("Nothing to respond to.")
+
+  const { data: link } = await supabaseAdmin
+    .from("creator_clients")
+    .select("id, work_claim")
+    .eq("id", linkId)
+    .eq("model_account_id", account.id)
+    .limit(1)
+    .maybeSingle()
+
+  if (!link || String((link as Record<string, unknown>).work_claim) !== "requested") {
+    back("There is no open work claim on that connection.")
+  }
+
   await supabaseAdmin
     .from("creator_clients")
-    .update({ status: accept ? "active" : "revoked", responded_at: new Date().toISOString() })
+    .update({ work_claim: approve ? "approved" : "declined", work_decided_at: new Date().toISOString() })
+    .eq("id", linkId)
+    .eq("model_account_id", account.id)
+    .eq("work_claim", "requested")
+
+  back(
+    approve
+      ? "Approved. This creator is building your page, so ending it now needs his agreement."
+      : "Declined. He keeps access, and you can still disconnect him at any time.",
+  )
+}
+
+/**
+ * Creator side: take back a claim she has not answered yet. Only an unanswered
+ * claim can be withdrawn -- an approved one is the agreement itself, and
+ * dropping it belongs in a release.
+ */
+export async function withdrawWorkClaim(formData: FormData) {
+  const account = await getSession()
+  if (!account) redirect("/signin?next=/dashboard")
+
+  const linkId = String(formData.get("linkId") || "")
+  if (!linkId) back("Nothing to withdraw.")
+
+  await supabaseAdmin
+    .from("creator_clients")
+    .update({ work_claim: "none", work_claimed_by: null, work_claim_note: null, work_claimed_at: null })
     .eq("id", linkId)
     .eq("creator_account_id", account.id)
+    .eq("work_claim", "requested")
 
-  back(accept ? "Accepted. The model is now one of your clients." : "Request declined.")
+  back("Claim withdrawn.")
 }
 
 /**
  * Model side: end the arrangement.
  *
- * If she invited the creator herself she can leave at any time and access ends
- * immediately. If the creator created her account and built her page, she can
- * only *ask* to be released -- the creator has to agree, so the work can be
- * paid for or she can start afresh on her own account.
+ * She can leave immediately when nothing ties her to the creator. Two things
+ * tie her: he created her account and page, or she approved his claim that he
+ * is the one putting in the work. In those cases she can only *ask* to be
+ * released -- he has to agree, so the work can be paid for or she can start
+ * afresh on her own account.
  */
 export async function disconnectCreator(formData: FormData) {
   const account = await getSession()
@@ -117,7 +222,7 @@ export async function disconnectCreator(formData: FormData) {
 
   const { data: link } = await supabaseAdmin
     .from("creator_clients")
-    .select("id, status, invited_by")
+    .select("id, status, invited_by, work_claim")
     .eq("id", linkId)
     .eq("model_account_id", account.id)
     .limit(1)
@@ -128,16 +233,27 @@ export async function disconnectCreator(formData: FormData) {
   const row = link as Record<string, unknown>
   const invitedBy = String(row.invited_by)
   const status = String(row.status)
+  const workClaim = String(row.work_claim || "none")
 
   if (status === "pending") {
     await supabaseAdmin.from("creator_clients").update({ status: "revoked" }).eq("id", linkId).eq("model_account_id", account.id)
     back("Request withdrawn.")
   }
 
-  if (invitedBy === "model") {
+  // An approved work claim removes the instant disconnect even though she was
+  // the one who invited him. An unanswered claim does not -- she never agreed
+  // to it, and walking away is her answer.
+  const owesApproval = invitedBy === "creator" || workClaim === "approved"
+
+  if (!owesApproval) {
     await supabaseAdmin
       .from("creator_clients")
-      .update({ status: "revoked", responded_at: new Date().toISOString() })
+      .update({
+        status: "revoked",
+        responded_at: new Date().toISOString(),
+        work_claim: workClaim === "requested" ? "declined" : workClaim,
+        work_decided_at: workClaim === "requested" ? new Date().toISOString() : null,
+      })
       .eq("id", linkId)
       .eq("model_account_id", account.id)
 
@@ -156,7 +272,11 @@ export async function disconnectCreator(formData: FormData) {
     .eq("id", linkId)
     .eq("model_account_id", account.id)
 
-  back("Release requested. This creator set up your page, so he has to approve it.")
+  back(
+    workClaim === "approved" && invitedBy === "model"
+      ? "Release requested. You approved that this creator does the work, so he has to approve it."
+      : "Release requested. This creator set up your page, so he has to approve it.",
+  )
 }
 
 /** Creator side: grant a release that was asked for. */
@@ -211,8 +331,9 @@ export async function refuseRelease(formData: FormData) {
  *
  * The new account owns its page -- ownership is never held by the creator --
  * and the link is written as active with invited_by = "creator", which is what
- * later stops her from disconnecting without his agreement. She signs in with
- * the username and password and can add an email herself later.
+ * later stops her from disconnecting without his agreement. No work claim is
+ * written: building the page is implied by having created it, and a claim only
+ * exists to be approved by someone who did not ask for the arrangement.
  */
 export async function createModelAccount(formData: FormData) {
   const account = await getSession()
