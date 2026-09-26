@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
 import { logLinkClick, getRequestMeta } from "@/lib/analytics"
+import { collectionDestinationFor } from "@/lib/collections"
 import { androidIntentFor, appSchemeFor, iosBounceHtml, isAndroid, isInAppBrowser, isIos } from "@/lib/deeplink"
 
 type Destination = { url: string; disabled?: boolean }
@@ -56,14 +57,32 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const m = await getRequestMeta()
   let destinationUrl: string | null = null
 
-  // 1) Country-based routing wins.
+  const dests = (link.destinations || []) as Destination[]
+  const ownDefault = dests.find((d) => !d.disabled)
+
+  // 1) Country-based routing wins. It is the per-link safety rule, so neither a
+  // campaign value nor a rotation pool may override it.
   const geoRules = (link.geo_rules || []) as GeoRule[]
   if (m.country) {
     const rule = geoRules.find((r) => Array.isArray(r.countries) && r.countries.includes(m.country as string))
     if (rule) destinationUrl = rule.url
   }
 
-  // 2) Rotation: serve the next URL in the pool, evenly.
+  // 2) Campaign value from the collection this page belongs to. Matched on
+  // links.collection_key when set, otherwise on the platform this button
+  // already points at, so the client does not have to tag every button.
+  // Deliberately ahead of rotation: a value edited once for the whole campaign
+  // should beat a pool saved on one link, and it only fires when the collection
+  // actually holds an enabled value for this platform.
+  if (!destinationUrl) {
+    destinationUrl = await collectionDestinationFor(
+      String(link.creator_id),
+      link.collection_key,
+      ownDefault ? ownDefault.url : null,
+    )
+  }
+
+  // 3) Rotation: serve the next URL in the pool, evenly.
   if (!destinationUrl && link.rotate) {
     const pool = (link.rotation_urls || []) as string[]
     const clean = pool.filter((u) => typeof u === "string" && u.trim().length > 0)
@@ -72,11 +91,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
   }
 
-  // 3) Fallback: first live default destination.
+  // 4) Fallback: first live default destination.
   if (!destinationUrl) {
-    const dests = (link.destinations || []) as Destination[]
-    const live = dests.find((d) => !d.disabled)
-    destinationUrl = live ? live.url : null
+    destinationUrl = ownDefault ? ownDefault.url : null
   }
 
   const target = destinationUrl ? normalizeUrl(destinationUrl) : null
@@ -87,7 +104,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   await logLinkClick(link.creator_id, link.id, target)
 
-  // 4) Smart deep linking. Only in-app browsers need rescuing: a normal mobile
+  // 5) Smart deep linking. Only in-app browsers need rescuing: a normal mobile
   // browser already hands https links to the installed app by itself.
   const userAgent = req.headers.get("user-agent") || ""
   if (isInAppBrowser(userAgent)) {
