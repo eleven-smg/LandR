@@ -6,12 +6,14 @@
 
 - `eleven-smg/LandR` (private). Previously moved to the `eleven-smgg` **org** by accident, which
   broke Vercel (Hobby cannot connect private org repos); transferred back, Vercel↔Git reconnected.
-- `main` head is **`1ebde424`** — Step 17, the live visitor counter. The 27 Sep session added, in
+- `main` head is **`762b05a1`** — Step 23, the consent banner. The 27 Sep session added, in
   order: `4245acb8` (BUGS only), `38ffe4cd` (unsubscribe), `79c02f18` + `8a5043ef` + `e260217a`
   (welcome email), `c9fedb48` (keep-alive), `d27a2897` + `533ce01a` (Step 19 editor fields),
   `882ffea9` (Step 18), `ce0d75a4` + `98d7a2aa` + `7f5539ec` + `5dc83800` (the memory pass),
-  `0c09ec5f` (Step 14 heatmap), `1ebde424` (Step 17 live counter). The 26 Sep session added ~35
-  commits on top of the 25 Aug head `bb021b79` (see `SESSION-LOG.md`).
+  `0c09ec5f` (Step 14 heatmap), `1ebde424` (Step 17 live counter), `a87a859b` + `08501047` (memory),
+  `3aa29a12` (Step 20 A/B tests), `762b05a1` (Step 23 consent banner), then the memory commits that
+  follow it. The 26 Sep session added ~35 commits on top of the 25 Aug head `bb021b79`
+  (see `SESSION-LOG.md`).
 - `restore/editor-embeds-and-schema` @ `549239c7` — stale, delete (A30).
 - Both branches unprotected. A typecheck workflow exists (`a260660b`) but **no tool here can read its
   result**, so every code commit is CODE proof only, never LIVE (B14). The client's forwarded Vercel
@@ -24,7 +26,8 @@
 
 ```
 app/  GlobalProgress.tsx  layout.tsx  page.tsx  globals.css  icon.svg
-      [handle]/   page.tsx  EmbedShowcase.tsx  SubscribeForm.tsx  ShareButton.tsx  Tracker.tsx
+      [handle]/   layout.tsx (new 27 Sep, consent)  ConsentBanner.tsx (new 27 Sep)
+                  page.tsx  EmbedShowcase.tsx  SubscribeForm.tsx  ShareButton.tsx  Tracker.tsx
                   whitelist/  contact.vcf/
       api/track/  api/keepalive/route.ts (new 27 Sep)  api/online/route.ts (new 27 Sep)
       go/[id]/route.ts   unsubscribe/{page.tsx,actions.ts} (new 27 Sep)
@@ -36,9 +39,11 @@ app/  GlobalProgress.tsx  layout.tsx  page.tsx  globals.css  icon.svg
                                   SaveButton SectionOrder ScheduleFields (new 27 Sep)
                                   actions.ts mediaActions.ts orderActions.ts page.tsx
                            heatmap/  page.tsx Heatmap.tsx OnlineNow.tsx (all new 27 Sep)
+                           experiments/  page.tsx (new 27 Sep)
+                           privacy/  page.tsx actions.ts (both new 27 Sep)
                            export/route.ts  users/ (= Team)  collections/  geoblocking/
-lib/  analytics collectionScope collections countryGroups creatorTeam deeplink handles
-      mailboxes progress schedule sections session signupLimit subscriberGeo supabaseAdmin
+lib/  abtest (new 27 Sep) analytics collectionScope collections countryGroups creatorTeam deeplink
+      handles mailboxes progress schedule sections session signupLimit subscriberGeo supabaseAdmin
       templates unsubscribe utm (new 27 Sep) welcomeCopy welcomeEmail
 sql/schema.sql (STALE - see BUGS B5)   middleware.ts   next.config.ts   vercel.json (new 27 Sep)
 AGENTS.md   .env.example   memory/
@@ -49,8 +54,16 @@ AGENTS.md   .env.example   memory/
 visitor numbers, so it calls `requireDashboardAccess(handle)` itself — route handlers never run a
 layout, which is F12's rule.
 
-Dashboard tabs, in sidebar order: Analytics, **Best time** (new 27 Sep, `slug: "heatmap"`, clock
-icon), Page Editor, Collections, Country rules, Team.
+**`app/[handle]/layout.tsx` (new)** wraps the public profile and `/{handle}/whitelist` — route
+handlers such as `contact.vcf` do not run a layout, so they are unaffected. It exists only to hang
+`ConsentBanner` outside the 24 KB `page.tsx`, and it costs **one extra `creators` read per public
+page view** on a route that is already `force-dynamic`. It selects three columns only.
+
+Dashboard tabs, in sidebar order: Analytics, **Best time** (`slug: "heatmap"`, clock icon),
+**A/B tests** (`slug: "experiments"`, split icon), Page Editor, Collections, Country rules,
+**Privacy** (`slug: "privacy"`, shield icon), Team. The last three of those tabs were added on
+27 Sep; each is its own route because the analytics page (24 KB) and the three editor files
+(30 KB each) are the whole-file resends that broke two builds that morning.
 
 `app/favicon.ico` was **deleted** on 26 Sep (`b33785e8`); the mark is now `app/icon.svg` only.
 
@@ -58,8 +71,9 @@ icon), Page Editor, Collections, Country rules, Team.
 
 - Live: `https://alandr.vercel.app` — `/`, `/ava`, `/signin`, `/register`, `/dashboard`,
   `/dashboard/compare`, `/dashboard/ava`, `/dashboard/ava/edit`, `/dashboard/ava/heatmap`,
-  `/dashboard/ava/users`, `/{handle}/whitelist`, `/{handle}/contact.vcf`, `/unsubscribe`,
-  `/api/keepalive`, `/api/online`, `/api/track`.
+  `/dashboard/ava/experiments`, `/dashboard/ava/privacy`, `/dashboard/ava/users`,
+  `/{handle}/whitelist`, `/{handle}/contact.vcf`, `/unsubscribe`, `/api/keepalive`, `/api/online`,
+  `/api/track`.
 - Vercel project: `vercel.com/leven-smg/land-r` → Deployments: `https://vercel.com/leven-smg/land-r/deployments`
   (always send this link to the client).
 - Hobby plan, non-commercial terms; a custom domain (Step 8) may need a paid plan.
@@ -109,7 +123,7 @@ icon), Page Editor, Collections, Country rules, Team.
   - Unique on `(creator_account_id, model_account_id)`; self-links rejected; indexed on both sides;
     RLS enabled with no policies, like every other table.
 
-### creators — email and campaign columns (added 27 Sep)
+### creators — email, campaign and consent columns (added 27 Sep)
 
 - Welcome email, all five added by `welcome_email_settings_and_send_log`:
   `welcome_email_enabled boolean not null default false`, `welcome_email_from`,
@@ -119,6 +133,12 @@ icon), Page Editor, Collections, Country rules, Team.
   `utm_enabled boolean not null default false`, `utm_source`, `utm_medium`, `utm_campaign`.
   Empty source falls back to the handle, empty medium to `link`; `utm_content` is always the button's
   own label and is not stored.
+- Consent banner, all three added by `consent_banner_settings` and verified in
+  `information_schema` after the migration:
+  `consent_banner_enabled boolean not null default false`, `consent_banner_text` (nullable, capped
+  at 400 characters by the form), `consent_privacy_url` (nullable, http(s) only — the action
+  prefixes a bare domain with `https://` and drops anything else, so the link cannot become a
+  `javascript:` url). **Off on both pages**, so no live visitor sees a notice yet.
 - Also present from earlier work: `whitelist_redirect_mode` (`compose` on both pages),
   `whitelist_from_email` (ava: `balogundivinee@gmail.com` — a Gmail address, fine for drafts, never a
   bulk sender), `whitelist_from_name`, `whitelist_compose_subject/body`, `whitelist_prompt_*`
@@ -152,6 +172,11 @@ icon), Page Editor, Collections, Country rules, Team.
   not exist yet.
 - `duration_seconds` is what `/api/online` adds to `created_at` to decide whether a session is still
   present, and what the analytics page uses for time-on-page. The heatmap uses `created_at` only.
+- `destination_url` is what the A/B report groups on (Step 20), after `canonicalUrl` strips `utm_*`,
+  the trailing slash and case — otherwise Step 18's own tags would split one variant into several.
+- **Consent affects which of these columns fill.** The `page_views` row is always written server-side
+  (country, device, referrer, no device id). `visitor_id`, `session_id` and `duration_seconds` are
+  written by `/api/track`, which the banner holds back until Accept — see B27.
 
 ### links
 
@@ -160,6 +185,9 @@ icon), Page Editor, Collections, Country rules, Team.
   `edit/ScheduleFields.tsx`. Every row still has both null, so nothing is currently timed.
 - Also: `geo_rules`, `rotate`, `rotation_urls`, `rotation_index`, `collection_key`, `layout`,
   `size`/`shape`/`color`, `preview_image_url`, `media_url`, `position`, `is_active`.
+- **There is no `url` column** — a link's own destinations live in the `destinations` jsonb.
+- All 8 rows have `rotate = false` and an empty `rotation_urls`, so the A/B tab (Step 20) shows its
+  empty state until the client turns rotation on for a link.
 
 ### collections (verified 26 Sep)
 
@@ -185,7 +213,7 @@ icon), Page Editor, Collections, Country rules, Team.
 | --- | --- |
 | creators | **2** — `ava` (8 links, 229 views) and `jaero_yt` (display name "John the first", 0 links, 3 views). **There is no duplicate `/jaero_yt` row: F13 is closed, nothing to delete.** |
 | accounts | 2 — `balogundivinee@gmail.com` admin, `jethrokhale@gmail.com` model |
-| links | 8 |
+| links | 8 — clicks so far: Telegram 22, Instagram 16, Threads 2, the other five 0 |
 | subscribers | 0 |
 | email_sends | 0 (new today) |
 | collections | 1 ("ava main") |
@@ -194,7 +222,9 @@ icon), Page Editor, Collections, Country rules, Team.
 
 With 229 views on one page and 3 on the other, the heatmap's 90-day window and 5,000-row cap are
 nowhere near binding, and the grid will be sparse — which the screen states plainly rather than
-naming a "best hour" from a handful of visits.
+naming a "best hour" from a handful of visits. The same caps on the A/B tab are equally slack, and
+its 30-click threshold means Telegram is the only link that could ever produce a verdict today — if
+it were rotating, which it is not.
 
 ### Migrations applied
 
@@ -210,9 +240,10 @@ collection_destinations_takeover_and_owner        (26 Sep 2026)
 creator_clients_work_claim                        (26 Sep 2026)
 welcome_email_settings_and_send_log               (27 Sep 2026)
 utm_tagging_settings                              (27 Sep 2026)
+consent_banner_settings                           (27 Sep 2026)
 ```
 
-Steps 14 and 17 added **no** migration — both read tables that already existed.
+Steps 14, 17 and 20 added **no** migration — all three read tables that already existed.
 
 ### Advisors
 
