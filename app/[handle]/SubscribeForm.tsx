@@ -42,6 +42,11 @@ export default function SubscribeForm({
    * just agreed to rather than a surprise, and the small line under it is where
    * the reason to bother goes ("and get free gifts"). Two lines inside one
    * button, so it is still a single tap.
+   *
+   * Used on the button that actually submits the address and opens the mail
+   * app. The pill style's little trigger only opens a box and is too tight for
+   * two lines, so it keeps the one-line label and the full wording waits on the
+   * button inside.
    */
   const face = extra ? (
     <span className="flex flex-col items-center leading-tight">
@@ -140,7 +145,7 @@ export default function SubscribeForm({
           className="flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-white/20 active:scale-95"
         >
           <span aria-hidden="true">&#9788;</span>
-          {face}
+          {label}
         </button>
 
         {open ? (
