@@ -8,6 +8,7 @@ import { requireDashboardAccess } from "@/lib/session"
 import { getRequestMeta } from "@/lib/analytics"
 import { tierForCountry } from "@/lib/subscriberGeo"
 import { WHITELIST_DEFAULTS, normalizeRedirectMode, resolveRedirect } from "@/lib/mailboxes"
+import { sendWelcomeEmail } from "@/lib/welcomeEmail"
 
 type Social = { platform: string; url: string }
 
@@ -181,6 +182,23 @@ export async function saveProfile(formData: FormData) {
     patch.whitelist_compose_body = String(formData.get("whitelist_compose_body") || "").trim() || null
   }
 
+  /**
+   * The welcome email. Guarded on the subject box, which the editor always
+   * posts even with the section collapsed: an unchecked box sends nothing at
+   * all, so without the guard any other form that saves a profile would be read
+   * as "switch the mail off" -- or, worse, a stray posted value would be read as
+   * "switch it on" on a page that never asked for it.
+   *
+   * The body keeps its line breaks; only the ends are trimmed.
+   */
+  if (formData.has("welcome_email_subject")) {
+    patch.welcome_email_enabled = formData.get("welcome_email_enabled") === "on"
+    patch.welcome_email_from = String(formData.get("welcome_email_from") || "").trim().toLowerCase() || null
+    patch.welcome_email_reply_to = String(formData.get("welcome_email_reply_to") || "").trim().toLowerCase() || null
+    patch.welcome_email_subject = String(formData.get("welcome_email_subject") || "").trim() || null
+    patch.welcome_email_body = String(formData.get("welcome_email_body") || "").trim() || null
+  }
+
   // Only the colour mode touches background_url, so switching to image or video
   // never wipes an uploaded file.
   if (bg_mode === "color" && bg_color) {
@@ -270,7 +288,7 @@ export async function subscribe(_prev: SubscribeState, formData: FormData): Prom
   const { data: creator } = await supabaseAdmin
     .from("creators")
     .select(
-      "id, handle, whitelist_redirect_mode, whitelist_from_email, whitelist_compose_subject, whitelist_compose_body, whitelist_prompt_enabled, whitelist_prompt_title, whitelist_prompt_note, whitelist_yes_label, whitelist_no_label",
+      "id, handle, whitelist_redirect_mode, whitelist_from_email, whitelist_compose_subject, whitelist_compose_body, whitelist_prompt_enabled, whitelist_prompt_title, whitelist_prompt_note, whitelist_yes_label, whitelist_no_label, welcome_email_enabled, welcome_email_from, welcome_email_reply_to, welcome_email_subject, welcome_email_body",
     )
     .eq("handle", handle)
     .single()
@@ -305,6 +323,36 @@ export async function subscribe(_prev: SubscribeState, formData: FormData): Prom
   }
 
   refresh(handle)
+
+  /**
+   * The welcome mail, when the page has one switched on. Only on a row that was
+   * actually inserted -- past this point a non-null error can only be the
+   * duplicate, and somebody already on the list was welcomed the first time.
+   *
+   * Wrapped, and the result thrown away on purpose: the address is already
+   * saved, so a mail problem must never come back as an error on the visitor's
+   * screen. Every outcome, sent or skipped or failed, is written to email_sends
+   * inside the sender.
+   */
+  if (!error) {
+    try {
+      await sendWelcomeEmail({
+        creatorId: String(creator.id),
+        handle: String(creator.handle || handle),
+        email,
+        name,
+        settings: {
+          welcome_email_enabled: creator.welcome_email_enabled === true,
+          welcome_email_from: String(creator.welcome_email_from || ""),
+          welcome_email_reply_to: String(creator.welcome_email_reply_to || ""),
+          welcome_email_subject: String(creator.welcome_email_subject || ""),
+          welcome_email_body: String(creator.welcome_email_body || ""),
+        },
+      })
+    } catch {
+      // Deliberately swallowed.
+    }
+  }
 
   /**
    * Tapping subscribe is the yes, so the address is saved and the browser is
