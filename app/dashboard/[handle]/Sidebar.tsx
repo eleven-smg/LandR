@@ -21,6 +21,7 @@ type Item = { slug: string; label: string; icon: string }
 // visitors see the normal page with different link destinations.
 const ITEMS: Item[] = [
   { slug: "", label: "Analytics", icon: "chart" },
+  { slug: "heatmap", label: "Best time", icon: "clock" },
   { slug: "edit", label: "Page Editor", icon: "pencil" },
   { slug: "collections", label: "Collections", icon: "grid" },
   { slug: "geoblocking", label: "Country rules", icon: "globe" },
@@ -49,6 +50,14 @@ function NavIcon({ name }: { name: string }) {
     return (
       <svg {...common}>
         <polyline points="3 17 9 11 13 15 21 7" />
+      </svg>
+    )
+  }
+  if (name === "clock") {
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="12" r="9" />
+        <polyline points="12 7 12 12 15.5 14" />
       </svg>
     )
   }
