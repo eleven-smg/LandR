@@ -35,6 +35,36 @@ function refresh(handle: string) {
 }
 
 /**
+ * A datetime-local input posts naive wall-clock text with no zone at all, and
+ * links.starts_at / links.ends_at are timestamptz, so the browser also posts its
+ * own offset in minutes (tz_offset, the sign convention of
+ * Date.prototype.getTimezoneOffset: UTC minus local). Reading the text with
+ * new Date(...) on the server would silently use the server's zone, which is UTC
+ * on Vercel, so a creator in Lagos would find her 9am saved as 10am.
+ *
+ * Empty means no bound, which is what lib/schedule.ts reads as "no limit on this
+ * side". Anything unparseable is treated the same way rather than guessed at: a
+ * half-typed date must never hide a live button.
+ */
+function isoFromLocalInput(value: FormDataEntryValue | null, tzOffset: FormDataEntryValue | null): string | null {
+  const raw = String(value || "").trim()
+  if (!raw) return null
+
+  const parts = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/)
+  if (!parts) return null
+
+  const minutes = Number(String(tzOffset ?? "").trim())
+  const shift = Number.isFinite(minutes) ? minutes : 0
+
+  const ms =
+    Date.UTC(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]), Number(parts[4]), Number(parts[5])) +
+    shift * 60000
+  if (Number.isNaN(ms)) return null
+
+  return new Date(ms).toISOString()
+}
+
+/**
  * Everything below writes with the service role, which ignores row level
  * security, so the only thing standing between a signed-in model and another
  * model's page is this check. The handle in the form proves nothing; it is
@@ -623,19 +653,34 @@ export async function updateLink(formData: FormData) {
   const color = String(formData.get("color") || "")
   const is_active = formData.get("is_active") === "on"
 
+  const patch: Record<string, unknown> = {
+    label,
+    type,
+    destinations: [{ url }],
+    icon: icon || null,
+    subtitle: subtitle || null,
+    shape,
+    size,
+    color: color || null,
+    is_active,
+  }
+
+  /**
+   * The schedule, Step 19. Guarded on the start box, which the editor always
+   * posts for every link: without the guard any other form that saves a link
+   * would read two absent inputs as "clear both dates" and quietly switch a
+   * timed link on forever. Empty inputs inside this form do mean clear, which
+   * is exactly what the Clear dates button posts.
+   */
+  if (formData.has("starts_at")) {
+    const tz = formData.get("tz_offset")
+    patch.starts_at = isoFromLocalInput(formData.get("starts_at"), tz)
+    patch.ends_at = isoFromLocalInput(formData.get("ends_at"), tz)
+  }
+
   await supabaseAdmin
     .from("links")
-    .update({
-      label,
-      type,
-      destinations: [{ url }],
-      icon: icon || null,
-      subtitle: subtitle || null,
-      shape,
-      size,
-      color: color || null,
-      is_active,
-    })
+    .update(patch)
     .eq("id", id)
     .eq("creator_id", access.creator.id)
 
