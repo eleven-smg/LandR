@@ -1,70 +1,89 @@
 # LandR — infrastructure state
 
-**Verified 2026-09-26** unless stated otherwise.
+**Verified 2026-09-27** unless stated otherwise.
 
 ## Repo
 
 - `eleven-smg/LandR` (private). Previously moved to the `eleven-smgg` **org** by accident, which
   broke Vercel (Hobby cannot connect private org repos); transferred back, Vercel↔Git reconnected.
-- `main` head is a **memory commit**; the last application code commit is **`d721982b`** — the
-  `/register` rate limit (F29). The work-claim flow `78af4f8b` is the code commit before it. The
-  25 Aug head was `bb021b79`; the 26 Sep session added ~35 commits on top of it
+- `main` head is **`882ffea9`** — Step 18, campaign tags. The 27 Sep session added, in order:
+  `4245acb8` (BUGS only), `38ffe4cd` (unsubscribe), `79c02f18` + `8a5043ef` + `e260217a` (welcome
+  email), `c9fedb48` (keep-alive), `d27a2897` + `533ce01a` (Step 19 editor fields), `882ffea9`
+  (Step 18). The 26 Sep session added ~35 commits on top of the 25 Aug head `bb021b79`
   (see `SESSION-LOG.md`).
 - `restore/editor-embeds-and-schema` @ `549239c7` — stale, delete (A30).
 - Both branches unprotected. A typecheck workflow exists (`a260660b`) but **no tool here can read its
-  result**, so 26 Sep code is CODE proof only (B14).
-- Stack: Next.js 16.2.10 (App Router) + Supabase. Local machine is gone — **Vercel is the only compiler.**
+  result**, so every code commit is CODE proof only, never LIVE (B14). The client's forwarded Vercel
+  failure emails are the only signal a build broke.
+- **Never split a caller and its callee across commits** — the lesson of F31/F32, two failed builds.
+- Stack: Next.js 16.2.10 (App Router) + Supabase + Tailwind 4. Local machine is gone —
+  **Vercel is the only compiler.**
 
 ### Layout
 
 ```
 app/  GlobalProgress.tsx  layout.tsx  page.tsx  globals.css  icon.svg
       [handle]/   page.tsx  EmbedShowcase.tsx  SubscribeForm.tsx  ShareButton.tsx  Tracker.tsx
-      api/track/  go/  signin/{page,actions}  register/{page,actions}
+                  whitelist/  contact.vcf/
+      api/track/  api/keepalive/route.ts (new 27 Sep)
+      go/[id]/route.ts   unsubscribe/{page.tsx,actions.ts} (new 27 Sep)
+      signin/{page,actions}  register/{page,actions}
       dashboard/  page.tsx (creator home)  actions.ts (team + work claim)  compare/
       dashboard/[handle]/  layout.tsx (auth gate)  page.tsx (analytics)  loading.tsx
                            Sidebar  Charts  TrafficChart  BreakdownCard  dashboard.css
-                           edit/  export/route.ts  users/ (= Team; rebuilt F23, admin + owner branches)
-                           collections/  geoblocking/ (= Country rules)
+                           edit/  ActionForm AvatarCard Builder CountryRules ProfileForm
+                                  SaveButton SectionOrder ScheduleFields (new 27 Sep)
+                                  actions.ts mediaActions.ts orderActions.ts page.tsx
+                           export/route.ts  users/ (= Team)  collections/  geoblocking/
 lib/  analytics collectionScope collections countryGroups creatorTeam deeplink handles
-      progress sections session signupLimit supabaseAdmin templates
-sql/schema.sql (STALE - see BUGS B5)   middleware.ts   AGENTS.md   CLAUDE.md
+      mailboxes progress schedule sections session signupLimit subscriberGeo supabaseAdmin
+      templates unsubscribe utm (new 27 Sep) welcomeCopy welcomeEmail
+sql/schema.sql (STALE - see BUGS B5)   middleware.ts   next.config.ts   vercel.json (new 27 Sep)
+AGENTS.md   .env.example   memory/
 ```
 
-`app/favicon.ico` was **deleted** on 26 Sep (`b33785e8`); the mark is now `app/icon.svg` only, so no
-browser can prefer the old create-next-app default.
+`middleware.ts` matches **only `/dashboard`**, so `/api/keepalive`, `/unsubscribe` and `/go/[id]`
+are deliberately outside the auth gate.
+
+`app/favicon.ico` was **deleted** on 26 Sep (`b33785e8`); the mark is now `app/icon.svg` only.
 
 ## Hosting
 
 - Live: `https://alandr.vercel.app` — `/`, `/ava`, `/signin`, `/register`, `/dashboard`,
-  `/dashboard/compare`, `/dashboard/ava`, `/dashboard/ava/edit`, `/dashboard/ava/users`.
+  `/dashboard/compare`, `/dashboard/ava`, `/dashboard/ava/edit`, `/dashboard/ava/users`,
+  `/{handle}/whitelist`, `/{handle}/contact.vcf`, `/unsubscribe`, `/api/keepalive`, `/api/track`.
 - Vercel project: `vercel.com/leven-smg/land-r` → Deployments: `https://vercel.com/leven-smg/land-r/deployments`
   (always send this link to the client).
 - Hobby plan, non-commercial terms; a custom domain (Step 8) may need a paid plan.
+- `vercel.json` holds one cron: `0 6 * * *` → `/api/keepalive` (see Supabase, below).
+- Environment variables still **not set** (the client's own Wednesday list): `RESEND_API_KEY`,
+  optional `CRON_SECRET`. Both features are written to be inert without them — the welcome email
+  logs `skipped`, and the keep-alive route enforces a bearer token only if `CRON_SECRET` exists.
 
 ## Supabase
 
-- **MCP server NOT connected** as of the end of the 26 Sep session: `connections.supabase` errors
-  "not available in script mode". It was available during Block 4 and has been unreachable since, so
-  **no read, row count or migration is possible** — the schema facts below are live-verified as of
-  Block 4 (26 Sep) and the row counts still date from 3 Sep. Reconnect before trusting either.
-- Project **LandR** `xwutsycngvrbgoxoarth`, eu-west-1, Postgres 17.6.1.141, created 2 Jul 2026.
-  Status `ACTIVE_HEALTHY` when last seen (26 Sep, Block 4).
+- **MCP server IS connected**, verified 27 Sep: `execute_sql` and `apply_migration` both ran. The
+  26 Sep note claiming it was unavailable was wrong and has been retracted in `BUGS.md` — test it,
+  never assume it is missing. `connections.ts` lists only `mcpServer_github`; that inventory is
+  stale and is not evidence.
+- Project **LandR** `xwutsycngvrbgoxoarth`, eu-west-1, Postgres 17, created 2 Jul 2026.
 - Second project `chatterdesk` `jlptjkmycdwsnslglquk` (eu-west-2) — unrelated, do not touch.
-- **Free tier auto-pauses after ~1 week idle** (see BUGS B8). Found `INACTIVE` and restored on 3 Sep.
+- **Free tier auto-pauses after ~1 week idle** (B8). Decision: stay free and keep it awake with the
+  daily Vercel cron above, which does a head-only `count` on `creators`. Found `INACTIVE` and
+  restored once, on 3 Sep.
 - Storage bucket `media`, public. Upload path `<creator_id>/<prefix>-<timestamp>.<ext>`.
 - `accounts.id` is `uuid DEFAULT gen_random_uuid()`; the session cookie holds that uuid and is
   validated against the table on every request.
 
-### accounts / creator ownership (verified 26 Sep)
+### accounts / creator ownership (verified 26 Sep, re-read 27 Sep)
 
-- `accounts(id, email, name, password, role, created_at, username)`.
-  - `email` is now **nullable**, because a creator-created model logs in with a username and may add
-    an email later.
-  - Before the 26 Sep migration `accounts` had **only a primary key** — no unique constraint on
-    `email` at all, so duplicate signups were possible. Partial unique indexes on `lower(email)`
-    and `lower(username)` now exist, plus a check that at least one of the two is present.
-  - `role` is now constrained to `admin | model | creator` (previously unconstrained text).
+- `accounts(id, email, name, password, role, created_at, username)` — **no `creator_id` column**, and
+  **no `account_pages` table**. Ownership linkage runs through `creators.account_id` and
+  `creator_clients`; `lib/session.ts` is the only place that resolves it.
+  - `email` is **nullable**: a creator-created model logs in with a username and may add one later.
+  - Partial unique indexes on `lower(email)` and `lower(username)`, plus a check that at least one is
+    present. Before 26 Sep the table had only a primary key, so duplicate signups were possible.
+  - `role` is constrained to `admin | model | creator`.
 - `creators.account_id` is the **single owner** of a page (the model). Creator access is never
   granted by changing this column — it comes from `creator_clients`.
 - `creator_clients(id, creator_account_id, model_account_id, status, invited_by, created_at,
@@ -82,6 +101,46 @@ browser can prefer the old create-next-app default.
   - Unique on `(creator_account_id, model_account_id)`; self-links rejected; indexed on both sides;
     RLS enabled with no policies, like every other table.
 
+### creators — email and campaign columns (added 27 Sep)
+
+- Welcome email, all five added by `welcome_email_settings_and_send_log`:
+  `welcome_email_enabled boolean not null default false`, `welcome_email_from`,
+  `welcome_email_reply_to`, `welcome_email_subject`, `welcome_email_body`.
+  **Off on every page**, so the feature is inert until somebody ticks it *and* a provider key exists.
+- Campaign tags, all four added by `utm_tagging_settings`:
+  `utm_enabled boolean not null default false`, `utm_source`, `utm_medium`, `utm_campaign`.
+  Empty source falls back to the handle, empty medium to `link`; `utm_content` is always the button's
+  own label and is not stored.
+- Also present from earlier work: `whitelist_redirect_mode` (`compose` on both pages),
+  `whitelist_from_email` (ava: `balogundivinee@gmail.com` — a Gmail address, fine for drafts, never a
+  bulk sender), `whitelist_from_name`, `whitelist_compose_subject/body`, `whitelist_prompt_*`
+  (prompt **off**), `subscribe_button_text` (ava: "Subscribe and say hello") and
+  `subscribe_button_note` ("and get free gifts").
+
+### email_sends (new 27 Sep)
+
+- `email_sends(id, creator_id → creators on delete cascade, email, kind default 'welcome', status,
+  detail, provider_id, created_at)`; index on `(creator_id, created_at desc)`; RLS on, no policies.
+- Every welcome-email outcome is written here — `sent`, `skipped` (switch off, no key, no from
+  address) or `failed` with the provider's message. This table is the only record of what the site
+  tried to send, so read it before believing any "the mail did not arrive" report.
+
+### subscribers
+
+- Holds `creator_id, handle, email, name, country, region, city, tier, wants_updates,
+  whitelist_opened_at, unsubscribed_at, created_at`. Unique on `(creator_id, email)` — a repeat
+  signup returns 23505 and is treated as success, and no second welcome is sent.
+- `unsubscribed_at` is stamped by `/unsubscribe`, which also sets `wants_updates = false`, guarded on
+  `.is("unsubscribed_at", null)` so a second click cannot rewrite the date.
+
+### links
+
+- `starts_at` / `ends_at` (timestamptz, nullable) have existed since August. Enforced since 26 Sep in
+  `lib/schedule.ts` (used by both the public page and `/go/[id]`) and **editable since 27 Sep** in
+  `edit/ScheduleFields.tsx`. Every row still has both null, so nothing is currently timed.
+- Also: `geo_rules`, `rotate`, `rotation_urls`, `rotation_index`, `collection_key`, `layout`,
+  `size`/`shape`/`color`, `preview_image_url`, `media_url`, `position`, `is_active`.
+
 ### collections (verified 26 Sep)
 
 - `collections(id, name, redirect_url, owner_account_id, country_redirect_enabled, destinations
@@ -93,28 +152,25 @@ browser can prefer the old create-next-app default.
 - `links.collection_key` optionally tags a link to a destination slot; when it is null the platform
   is derived from the link's own destination host instead, so destinations work with no tagging.
 
-### signup_log (schema confirmed from `sql/schema.sql`, which is correct for this table)
+### signup_log
 
 - `signup_log(id, ip, handle, created_at)` with `signup_log_ip_created_at_idx` on `(ip, created_at)`.
-  Both have existed since August. The index name matches the live unused-index advisory list, which
-  is how it was confirmed while the MCP server is down.
 - **It had no writer at all until `d721982b` (F29).** `lib/signupLimit.ts` now writes one row per
   **completed** `/register` signup and reads the last 24h to enforce 3 per IP per hour / 8 per day.
   A read failure allows the signup and logs loudly, by design.
 
-### Real row counts (`count(*)`, 3 Sep 2026 — never trust `list_tables.rows`)
+### Real row counts (`count(*)`, 27 Sep 2026 — never trust `list_tables.rows`)
 
 | Table | Rows |
 | --- | --- |
-| creators | 2 (the second is `/jaero_yt`, F13 — still not deleted) |
-| accounts | 2 (still 2 on 26 Sep: `balogundivinee@gmail.com` admin, `jethrokhale@gmail.com` model) |
+| creators | **2** — `ava` (8 links, 229 views) and `jaero_yt` (display name "John the first", 0 links, 3 views). **There is no duplicate `/jaero_yt` row: F13 is closed, nothing to delete.** |
+| accounts | 2 — `balogundivinee@gmail.com` admin, `jethrokhale@gmail.com` model |
 | links | 8 |
-| page_views | 206 |
-| link_clicks | 51 |
 | subscribers | 0 |
-| collections | 1 |
-| signup_log | 0 — but the table **now has a writer** (F29); expect rows once a real signup happens |
-| creator_clients | 0 (new, 26 Sep) |
+| email_sends | 0 (new today) |
+| collections | 1 ("ava main") |
+| creator_clients | 0 |
+| signup_log | 0 — the table now has a writer (F29); expect rows once a real signup happens |
 
 ### Migrations applied
 
@@ -128,21 +184,19 @@ browser can prefer the old create-next-app default.
 creator_accounts_and_client_links                 (26 Sep 2026)
 collection_destinations_takeover_and_owner        (26 Sep 2026)
 creator_clients_work_claim                        (26 Sep 2026)
+welcome_email_settings_and_send_log               (27 Sep 2026)
+utm_tagging_settings                              (27 Sep 2026)
 ```
-
-Nothing after `creator_clients_work_claim`: the rate limit (F29) needed no migration, and none has
-been possible since Block 4.
 
 ### Advisors
 
-- Security: 8× `rls_enabled_no_policy` (INFO) — intended, every write goes through the service role.
-  Re-run `get_advisors` after the creator work; `creator_clients` will add a ninth.
-- Performance: 6× unused index (INFO) — `link_clicks_link_id_idx`, `links_creator_id_position_idx`,
+- Security: `rls_enabled_no_policy` (INFO) on every table — intended, every write goes through the
+  service role. `email_sends` adds one more; re-run `get_advisors` to confirm the new count.
+- Performance: unused indexes (INFO) — `link_clicks_link_id_idx`, `links_creator_id_position_idx`,
   `signup_log_ip_created_at_idx`, `creators_collection_id_idx`, `creators_account_id_idx`,
-  `page_views_visitor_idx`. `signup_log_ip_created_at_idx` is now read on every signup attempt, so it
-  should drop off that list once `/register` sees traffic. The two indexes added on 26 Sep
-  (`collections.owner_account_id`, `links.collection_key`) will read as unused until the features get
-  traffic.
+  `page_views_visitor_idx`, plus the 26 Sep pair (`collections.owner_account_id`,
+  `links.collection_key`) and now `email_sends (creator_id, created_at desc)`. All will read as
+  unused until the features see traffic.
 
 ## Product facts
 
@@ -153,15 +207,20 @@ been possible since Block 4.
 - Themes: `noir`, `blush`, `aurora`, `gold`. Templates: Classic photo, Spotlight, Mosaic, Glass sheet.
 - Palette: `#0f1117`, `#181c27`, `#232940`, `#5b7fff`.
 - Brand: the product is written **LandR** everywhere, including `app/page.tsx` since `3efb889a`.
-  The home page used to say "Lander"; unifying it was my call on the evidence, not the client's —
-  still an open question for him.
+  The client has said the name is moving off "Lander"; the new name is his to choose and is parked
+  until Wednesday with the domain.
+- **Honest limit, repeated to the client:** no provider API can whitelist a third-party sender. Only
+  "open a prefilled draft" and "land on the right screen" are real; everything else in that area is
+  wording, not delivery.
 
 ## Credentials
 
 **Not recorded in this repo, by design.** They live in Vercel/Supabase environment variables.
 Note for whoever picks this up: the service-role key and the admin password were pasted into the
 Aug chat archive and the handoff PDF, and the client **declined to rotate them** (Step 12,
-CANCELLED). Treat the archive as a secret-bearing document.
+CANCELLED). Treat the archive as a secret-bearing document. `lib/unsubscribe.ts` signs its tokens
+with `SUPABASE_SERVICE_ROLE_KEY`, so rotating that key would invalidate every unsubscribe link
+already sent.
 
 ## Source documents (the plan of record)
 

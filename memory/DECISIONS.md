@@ -33,6 +33,16 @@
 | **Compare models** | Build it: pick any subset of the creator's models and compare them statistically and graphically | 26 Sep |
 | **What the Team tab shows** | Two different screens behind one label: an **admin** gets the workspace-wide account management (accounts, roles, ownership, remove an account, delete a page), and a **model or creator** gets pending work claims, the creators connected to this page with the right release control, an invite box and her own login card. "Delete a page" stays inside the admin branch rather than moving to a separate route | 26 Sep |
 | **Typecheck** | Added as a GitHub Actions workflow (B14). Vercel is no longer the only compiler | 26 Sep |
+| **Supabase plan (B8)** | **Stay on the free tier.** Instead of paying, one Vercel cron (`vercel.json`, `0 6 * * *` → `/api/keepalive`) touches the database daily so it never reaches the ~1 week idle pause. The route is head-only, needs no secret to work, and enforces `Bearer CRON_SECRET` only if that variable exists — so it required nothing from the client. **This closes the open "pay or accept breakage" question** | 27 Sep |
+| **All database work through MCP** | The client will **not** log into Supabase. Every schema change and every count is done with the Supabase MCP server from here. **Never paste SQL to him** | 27 Sep |
+| **Mailing lives inside LandR** | The subscriber mail (once called "LandaMail") is part of this product and this repo, not a second app | 27 Sep |
+| **How the site sends mail** | A provider key (Resend) sits in a server environment variable and the site posts to the provider's HTTPS API as the creator's own address. It needs **no email login from her**, cannot read her inbox, and replies land in her normal mail app. Until the key exists every attempt is logged as `skipped` in `email_sends` and nothing is sent | 27 Sep |
+| **Welcome email default** | **Off on every page.** A ticked switch with no provider key still sends nothing, and the editor says so in plain words. Placeholders `{name}` `{handle}` `{email}` are supported in the welcome mail (the older auto-draft still does not support them) | 27 Sep |
+| **Unsubscribe** | Every sent mail gets a footer line and a `List-Unsubscribe` header, but **no `List-Unsubscribe-Post`**: one-click headers promise the mail client that no confirmation screen follows, and `/unsubscribe` deliberately asks with a button. Tokens are HMACs keyed on `SUPABASE_SERVICE_ROLE_KEY` with **no expiry**, because a link printed in an old mail must keep working | 27 Sep |
+| **Where subscribe sends people** | Default is the **prefilled draft** to the creator (`whitelist_redirect_mode = 'compose'`), with the subscriber's own mailbox or the walkthrough page as the alternatives. Tapping subscribe is itself the yes: the address is saved first, then the browser is sent on | 27 Sep |
+| **Link schedules** | One seam, `lib/schedule.ts`, answers "is this live now" for both the public page and `/go/[id]`, and `/go/[id]` enforces it even though the button is already hidden, because that URL outlives the button. Dates are typed in **the creator's own clock** and sent with a `tz_offset` the server converts, never read with `new Date()` on the server (which is UTC on Vercel) | 27 Sep |
+| **Campaign tags (Step 18)** | Applied **after** country rules, collections and rotation have chosen the destination, so a tag can never change where a click lands. A parameter the pasted link already carries is left alone. Values are stored lower-cased and hyphenated, because reporting tools treat "Summer Drop" and "summer-drop" as different. Off until switched on | 27 Sep |
+| **The product name** | Written **LandR** everywhere in code today. The client has said it is moving off "Lander"; choosing the new name is his and is parked with the domain | 27 Sep |
 
 ## Open — these block work
 
@@ -43,8 +53,8 @@
    order and height change)? *Recommendation: single-column — free-form breaks on narrow screens.*
 3. **Session/password hardening now or later** (B3/B4/A25)? *Recommendation: now, before ten real logins exist.*
 4. **Can models edit their own page, or only view analytics?** Today a model gets the full editor.
-5. **Supabase plan** (B8) — pay, or accept the page breaking after ~1 week of no traffic?
-6. Snapchat's pill colour — client's own pick, still outstanding.
-7. A placeholder profile photo for Ava.
-8. Is the saved flagged-country list intentional (Nigeria, Ghana, Kenya … India, Pakistan,
+5. Snapchat's pill colour — client's own pick, still outstanding.
+6. A placeholder profile photo for Ava.
+7. Is the saved flagged-country list intentional (Nigeria, Ghana, Kenya … India, Pakistan,
    Bangladesh), or left over from testing?
+8. Is "crop reads 0" still happening? Not reproducing here.
