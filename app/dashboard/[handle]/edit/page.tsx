@@ -199,6 +199,8 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
     subscribe_title: String(creator.subscribe_title || "Get notified"),
     subscribe_note: String(creator.subscribe_note || ""),
     subscribe_button_text: String(creator.subscribe_button_text || ""),
+    // The small second line inside the button, empty for a one-line button.
+    subscribe_button_note: String(creator.subscribe_button_note || ""),
     subscribe_ask_name: !!creator.subscribe_ask_name,
     // Where subscribe sends people, and the wording of the optional question.
     // Empty strings mean "use the shipped default", which is what the inputs

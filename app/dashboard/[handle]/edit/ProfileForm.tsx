@@ -29,6 +29,7 @@ export type ProfileValues = {
   subscribe_title: string
   subscribe_note: string
   subscribe_button_text: string
+  subscribe_button_note: string
   subscribe_ask_name: boolean
   whitelist_redirect_mode: string
   whitelist_from_email: string
@@ -83,6 +84,18 @@ const chip: CSSProperties = {
   cursor: "pointer",
 }
 const chipOn: CSSProperties = { ...chip, borderColor: "#5b7fff", background: "rgba(91,127,255,0.12)", color: "#cdd6f4" }
+const preview: CSSProperties = {
+  marginTop: 10,
+  borderRadius: 999,
+  background: "#ffffff",
+  color: "#000000",
+  padding: "10px 18px",
+  textAlign: "center",
+  lineHeight: 1.15,
+  alignSelf: "flex-start",
+}
+const previewMain: CSSProperties = { fontSize: 15, fontWeight: 600, display: "block" }
+const previewNote: CSSProperties = { fontSize: 11, opacity: 0.7, display: "block" }
 
 /**
  * What each mode actually does, in the words of the person choosing it. No
@@ -128,6 +141,8 @@ export default function ProfileForm({
   const isPhoneShape = shape === "phone"
   const redirectMode = normalizeRedirectMode(v.whitelist_redirect_mode)
   const needsAddress = redirectMode === "compose" && !v.whitelist_from_email.trim()
+  const buttonMain = v.subscribe_button_text.trim() || (subStyle === "pill" ? "Subscribe" : "Notify me")
+  const buttonNote = v.subscribe_button_note.trim()
 
   const frame: CSSProperties = {
     width: isPhoneShape ? 132 : 250,
@@ -400,16 +415,35 @@ export default function ProfileForm({
             />
           </label>
           <label style={lbl}>
-            Button text
+            Button text &mdash; the big line
             <input
               style={input}
               name="subscribe_button_text"
               value={v.subscribe_button_text}
-              placeholder="Subscribe"
+              placeholder="Subscribe and say hello"
               onChange={(e) => set("subscribe_button_text", e.target.value)}
             />
           </label>
         </div>
+        <label style={lbl}>
+          Small line under it &mdash; leave empty and the button stays one line
+          <input
+            style={input}
+            name="subscribe_button_note"
+            value={v.subscribe_button_note}
+            placeholder="and get free gifts"
+            onChange={(e) => set("subscribe_button_note", e.target.value)}
+          />
+        </label>
+        <div style={preview}>
+          <span style={previewMain}>{buttonMain}</span>
+          {buttonNote ? <span style={previewNote}>{buttonNote}</span> : null}
+        </div>
+        <p style={hint}>
+          The button is where the warning belongs. &ldquo;Subscribe and say hello&rdquo; tells them a message is about to
+          open, so their mail app appearing is the thing they just agreed to instead of a shock &mdash; and the small line
+          is where the reason to bother goes. Drop it when there is no gift.
+        </p>
         <label style={lbl}>
           Note under the title
           <input
@@ -445,9 +479,9 @@ export default function ProfileForm({
             value={redirectMode}
             onChange={(e) => set("whitelist_redirect_mode", e.target.value)}
           >
-            <option value="compose">A message to you, already written</option>
-            <option value="inbox">Their own mailbox or safe-sender screen</option>
-            <option value="page">The short how-to page on your site</option>
+            <option value="compose">The auto-draft &mdash; a message to you, already written</option>
+            <option value="inbox">Smart inbox routing &mdash; their own mailbox or safe-sender screen</option>
+            <option value="page">The instruction page on your site</option>
             <option value="off">Nowhere &mdash; just the thank you</option>
           </select>
         </label>

@@ -120,6 +120,7 @@ export async function saveProfile(formData: FormData) {
   const subscribe_title = String(formData.get("subscribe_title") || "").trim()
   const subscribe_note = String(formData.get("subscribe_note") || "").trim()
   const subscribe_button_text = String(formData.get("subscribe_button_text") || "").trim()
+  const subscribe_button_note = String(formData.get("subscribe_button_note") || "").trim()
   const subscribe_ask_name = formData.get("subscribe_ask_name") === "on"
   const deep_links = formData.get("deep_links") === "on"
   const share_button = formData.get("share_button") === "on"
@@ -149,6 +150,15 @@ export async function saveProfile(formData: FormData) {
     subscribe_ask_name,
     deep_links,
     share_button,
+  }
+
+  /**
+   * The small second line inside the subscribe button: "and get free gifts"
+   * under "Subscribe and say hello". Guarded on the field itself, so a form
+   * that does not carry the input cannot blank a line that is already set.
+   */
+  if (formData.has("subscribe_button_note")) {
+    patch.subscribe_button_note = subscribe_button_note || null
   }
 
   /**
