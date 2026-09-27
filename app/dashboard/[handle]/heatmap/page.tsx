@@ -2,11 +2,13 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin"
 import { likeSafeHandle } from "@/lib/handles"
 import type { CSSProperties } from "react"
 import Heatmap from "./Heatmap"
+import OnlineNow from "./OnlineNow"
 
 export const dynamic = "force-dynamic"
 
 // Access is enforced by app/dashboard/[handle]/layout.tsx, the same gate the
 // other tabs rely on. This page only reads, and only this page's own rows.
+// /api/online, which OnlineNow polls, gates itself -- a route has no layout.
 const DAYS_BACK = 90
 const ROW_CAP = 5000
 
@@ -64,6 +66,8 @@ export default async function HeatmapPage({ params }: { params: Promise<{ handle
           {DAYS_BACK} days.
         </div>
       </div>
+
+      <OnlineNow handle={String(creator.handle)} />
 
       <Heatmap views={views} clicks={clicks} days={DAYS_BACK} capped={capped} />
     </div>
