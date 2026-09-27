@@ -26,6 +26,7 @@ const ITEMS: Item[] = [
   { slug: "edit", label: "Page Editor", icon: "pencil" },
   { slug: "collections", label: "Collections", icon: "grid" },
   { slug: "geoblocking", label: "Country rules", icon: "globe" },
+  { slug: "privacy", label: "Privacy", icon: "shield" },
   { slug: "users", label: "Team", icon: "users" },
 ]
 
@@ -95,6 +96,14 @@ function NavIcon({ name }: { name: string }) {
         <circle cx="12" cy="12" r="9" />
         <line x1="3" y1="12" x2="21" y2="12" />
         <path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18Z" />
+      </svg>
+    )
+  }
+  if (name === "shield") {
+    return (
+      <svg {...common}>
+        <path d="M12 3l7 3v5.5c0 4.3-2.9 7.6-7 9.5-4.1-1.9-7-5.2-7-9.5V6l7-3Z" />
+        <polyline points="9 12 11.5 14.5 15.5 10" />
       </svg>
     )
   }
