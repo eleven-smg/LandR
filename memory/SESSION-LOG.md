@@ -4,7 +4,7 @@ Append one entry per working session, newest first. Always record commit SHAs.
 
 ---
 
-## 2026-09-27 — two failed builds before breakfast, then the mailing groundwork, Step 19, Step 18, and the Best time tab
+## 2026-09-27 — two failed builds before breakfast, then the mailing groundwork, Step 19, Step 18, the Best time tab, A/B tests and the consent banner
 
 Longest session so far. Head was `1ec009c4` once the morning's breakage was repaired. The client's
 standing instruction all day was to keep building and stop asking process questions; everything that
@@ -210,6 +210,87 @@ CODE. What remains buildable without the client: double opt-in, Step 23 consent 
 on the existing rotation, B3/B4 session and password hardening, B5 regenerating `sql/schema.sql`,
 B12's incoming-UTM capture, and A30. A24 the visual page builder is still the biggest item and still
 waiting on his answers; Wednesday unblocks the domain, DNS, `RESEND_API_KEY` and Step 24.
+
+### Block 17 — Step 20: an A/B tab reading the rotation that already existed
+
+| SHA | What |
+| --- | --- |
+| `3aa29a12` (+353, 3 files) | **new** `lib/abtest.ts` + `app/dashboard/[handle]/experiments/page.tsx`; `Sidebar.tsx` gains the nav item — **Step 20** |
+
+**No migration.** Rotation has stored its variants in `links.rotation_urls` and its cursor in
+`rotation_index` since August, and every click already lands in `link_clicks` carrying the
+`destination_url` the visitor was actually sent to. An A/B test is therefore a *reading* of data the
+product has been collecting all along — clicks grouped by destination on a rotating link — and not a
+new table.
+
+**The genuinely hard part was Step 18 sabotaging Step 20.** `/go/[id]` tags the destination *after*
+rotation has chosen it and `logLinkClick` stores the tagged URL, so with `utm_enabled` on, one
+variant is logged under a different string for every campaign and each string looks like a separate
+arm. `canonicalUrl` strips every `utm_*` parameter, drops a trailing slash and lower-cases scheme and
+host before grouping, which puts the variants back together. Worth remembering as a general shape:
+anything that rewrites a destination downstream of a decision will break any later attempt to read
+that decision back out of the logs.
+
+**The statistics are deliberately timid.** `MIN_CLICKS = 30` per link before a verdict is offered at
+all, and a winner is declared only when a two-way z-test on the split clears `gap / sqrt(n) ≥ 1.96`
+— roughly 95% confidence. Below either bar the tab shows the raw counts and says there is not enough
+data yet, because a confident-looking winner drawn from nine clicks is worse than no answer. The page
+is a server component, `force-dynamic`, reads 90 days with a 5,000-row cap, and prints the window and
+the cap on screen.
+
+**It also says "clicks ≠ conversions" out loud.** LandR can see which variant got tapped; it cannot
+see what happened after the tap, so the tab calls the winner the more *clicked* arm rather than the
+better one.
+
+**What Ava sees today is the empty state, and that is correct**: all eight of her links are
+`rotate=false` with `rotation_urls=[]`, so there is nothing to compare until rotation is switched on
+for a link. That went into the verification list in `PROGRESS.md` so the empty tab is not later
+misread as a bug.
+
+**Step 20 is DONE (CODE).**
+
+### Block 18 — Step 23: the consent banner, and the one page view it cannot hold back
+
+| SHA / migration | What |
+| --- | --- |
+| migration `consent_banner_settings` | `creators` += `consent_banner_enabled` (bool not null default false), `consent_banner_text`, `consent_privacy_url`; existence re-verified through `information_schema` |
+| `762b05a1` (+477/−38, 6 files) | **new** `app/[handle]/layout.tsx`, `app/[handle]/ConsentBanner.tsx`, `app/dashboard/[handle]/privacy/page.tsx` + `privacy/actions.ts`; `Tracker.tsx` rewritten; `Sidebar.tsx` +9/−0 |
+
+**Off by default on every page**, so nothing about a live visit changed on push.
+
+**Where it had to live.** The banner belongs to every public route under a handle, so it went into a
+new `app/[handle]/layout.tsx` (server, `force-dynamic`) that reads only the three consent columns by
+handle and renders `{children}` plus `<ConsentBanner>`. That covers `/{handle}/whitelist` as well as
+the page itself and costs one extra `creators` read per public view. It does **not** cover route
+handlers — they run no layout, which is F12's rule for the third time this week.
+
+**The hidden marker is unconditional, and that is the whole trick.** React runs child effects before
+parent effects, so `Tracker` mounts and would fire before any banner could tell it not to. The banner
+therefore always server-renders `data-landr-consent="required"` when consent is enabled; `Tracker`
+reads the DOM for that marker and, if it is there and consent has not been accepted, writes no
+`landr_vid` or `landr_sid` and sends nothing to `/api/track`. It parks its `start()` closure and waits
+for the `landr-consent` CustomEvent, so accepting mid-visit begins tracking from that moment. The
+decision lives in `localStorage` under `landr_consent` as `accepted` / `declined`. The banner is a
+fixed bottom card with Accept and Decline, an optional privacy link, and a 400-character limit on the
+owner's own wording with sensible default copy.
+
+**The switch is on a new Privacy tab, not in the editor.** A plain server form plus `saveConsent`
+gated by `requireDashboardAccess`, an http(s)-only sanitiser on the privacy URL, and a revalidate of
+both the tab and `/{handle}`. A deliberate dodge: the obvious home would have been a card in
+`ProfileForm.tsx` (29.7 KB), `edit/actions.ts` (30.7 KB) or `edit/page.tsx` (33 KB), and every edit
+to those means resending the whole file — the exact shape of this morning's two failed builds. Same
+reasoning as the Best time tab in Block 16; the dashboard is now seven tabs.
+
+**The honest gap, filed as B27 (P2).** `app/[handle]/page.tsx` inserts the `page_views` row on the
+server before any browser code runs, so a visitor who declines is still counted once — anonymously,
+with no visitor id, no session id and no duration, but counted. It is said on screen next to the
+switch rather than left for the client to find, and `BUGS.md` carries both fixes: gate the insert on
+a cookie the banner sets, or move the first page view into `/api/track`.
+
+**Step 23 is DONE (CODE). Pack totals are now 18 DONE · 2 PARTIAL · 3 NOT STARTED · 1 CANCELLED.**
+Of what is left, Step 21 (QR) wants an npm dependency, which is a blind risk with no readable
+typecheck; Step 8 and Step 24 wait on Wednesday; A24 the visual page builder is the largest remaining
+item and still waiting on his answers.
 
 ---
 
