@@ -7,7 +7,7 @@ import { clampPercent, clampZoom, normalizeSubscribeStyle, normalizeTemplate } f
 import { requireDashboardAccess } from "@/lib/session"
 import { getRequestMeta } from "@/lib/analytics"
 import { tierForCountry } from "@/lib/subscriberGeo"
-import { WHITELIST_DEFAULTS, mailboxDomain } from "@/lib/mailboxes"
+import { WHITELIST_DEFAULTS, normalizeRedirectMode, resolveRedirect } from "@/lib/mailboxes"
 
 type Social = { platform: string; url: string }
 
@@ -15,8 +15,14 @@ export type SubscribeState = {
   ok?: boolean
   error?: string
   email?: string
-  /** The editable "want every update?" question, when the page has it on. */
-  ask?: { title: string; note: string; yes: string; no: string; url: string }
+  /**
+   * Where the browser goes the moment the address is saved: a prefilled draft
+   * to the creator, the subscriber's own mailbox, or the walkthrough page.
+   * Empty string when the page turns the redirect off.
+   */
+  redirect?: string
+  /** The optional "want every update?" question, when the page has it on. */
+  ask?: { title: string; note: string; yes: string; no: string }
 }
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -146,14 +152,14 @@ export async function saveProfile(formData: FormData) {
   }
 
   /**
-   * The whitelist question's wording is editable like the bio, but its inputs
-   * are only added to the editor in the next pass. Until then this block is
-   * skipped entirely when the form did not carry the fields -- reading a
-   * missing checkbox as "off" would quietly switch the question off on every
-   * unrelated profile save, which is exactly the kind of silent regression that
-   * is impossible to notice from the editor.
+   * Where subscribe sends people, and the wording of the optional question.
+   * Guarded on one field the editor always posts: any other form that saves a
+   * profile without these inputs would otherwise read a missing checkbox as
+   * "off" and quietly switch the whole flow off, which is impossible to notice
+   * from the editor.
    */
   if (formData.has("whitelist_prompt_title")) {
+    patch.whitelist_redirect_mode = normalizeRedirectMode(formData.get("whitelist_redirect_mode"))
     patch.whitelist_prompt_enabled = formData.get("whitelist_prompt_enabled") === "on"
     patch.whitelist_prompt_title = String(formData.get("whitelist_prompt_title") || "").trim() || null
     patch.whitelist_prompt_note = String(formData.get("whitelist_prompt_note") || "").trim() || null
@@ -161,6 +167,8 @@ export async function saveProfile(formData: FormData) {
     patch.whitelist_no_label = String(formData.get("whitelist_no_label") || "").trim() || null
     patch.whitelist_from_email = String(formData.get("whitelist_from_email") || "").trim().toLowerCase() || null
     patch.whitelist_from_name = String(formData.get("whitelist_from_name") || "").trim() || null
+    patch.whitelist_compose_subject = String(formData.get("whitelist_compose_subject") || "").trim() || null
+    patch.whitelist_compose_body = String(formData.get("whitelist_compose_body") || "").trim() || null
   }
 
   // Only the colour mode touches background_url, so switching to image or video
@@ -252,7 +260,7 @@ export async function subscribe(_prev: SubscribeState, formData: FormData): Prom
   const { data: creator } = await supabaseAdmin
     .from("creators")
     .select(
-      "id, handle, whitelist_prompt_enabled, whitelist_prompt_title, whitelist_prompt_note, whitelist_yes_label, whitelist_no_label",
+      "id, handle, whitelist_redirect_mode, whitelist_from_email, whitelist_compose_subject, whitelist_compose_body, whitelist_prompt_enabled, whitelist_prompt_title, whitelist_prompt_note, whitelist_yes_label, whitelist_no_label",
     )
     .eq("handle", handle)
     .single()
@@ -289,24 +297,41 @@ export async function subscribe(_prev: SubscribeState, formData: FormData): Prom
   refresh(handle)
 
   /**
-   * The question that turns a subscriber into a subscriber who actually sees
-   * the mail. Its wording belongs to the creator, so the stored copy wins and
-   * the shared defaults are only a fallback. The walkthrough link carries the
-   * mailbox domain, never the address, so the destination knows it is Gmail
-   * without knowing who subscribed.
+   * Tapping subscribe is the yes, so the address is saved and the browser is
+   * sent straight on: a prefilled draft to the creator by default, the
+   * subscriber's own mailbox or the walkthrough page when the page says so.
+   * The provider is read from the address that was just typed in, so a Gmail
+   * subscriber goes to Gmail and an Outlook one to Outlook, and on a phone the
+   * mailto: hands over to whichever mail app is actually installed. The
+   * walkthrough link carries the mailbox domain, never the address, so the
+   * destination knows it is Gmail without knowing who subscribed.
    */
-  if (creator.whitelist_prompt_enabled === false) return { ok: true, email }
+  const target = resolveRedirect({
+    mode: creator.whitelist_redirect_mode,
+    address: email,
+    handle: String(creator.handle || handle),
+    fromEmail: String(creator.whitelist_from_email || ""),
+    subject: String(creator.whitelist_compose_subject || "") || WHITELIST_DEFAULTS.composeSubject,
+    body: String(creator.whitelist_compose_body || "") || WHITELIST_DEFAULTS.composeBody,
+    mobile: meta.device !== "desktop",
+  })
 
-  const domain = mailboxDomain(email)
+  /**
+   * The question is off unless the page turns it on. Its wording belongs to the
+   * creator, so the stored copy wins and the shared defaults are only a
+   * fallback.
+   */
+  if (creator.whitelist_prompt_enabled !== true) return { ok: true, email, redirect: target.url }
+
   return {
     ok: true,
     email,
+    redirect: target.url,
     ask: {
       title: String(creator.whitelist_prompt_title || "") || WHITELIST_DEFAULTS.title,
       note: String(creator.whitelist_prompt_note || "") || WHITELIST_DEFAULTS.note,
       yes: String(creator.whitelist_yes_label || "") || WHITELIST_DEFAULTS.yes,
       no: String(creator.whitelist_no_label || "") || WHITELIST_DEFAULTS.no,
-      url: "/" + String(creator.handle || handle) + "/whitelist?mb=" + encodeURIComponent(domain),
     },
   }
 }

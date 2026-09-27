@@ -21,15 +21,16 @@ const submit =
 export default function SubscribeForm({ handle, title, note, style, buttonText, askName, avatar }: Props) {
   const [state, formAction, pending] = useActionState<SubscribeState, FormData>(subscribe, {})
   const [open, setOpen] = useState(false)
-  const [answered, setAnswered] = useState(false)
+  const [declined, setDeclined] = useState(false)
   const [going, setGoing] = useState(false)
   const label = buttonText || (style === "pill" ? "Subscribe" : "Notify me")
 
   // The question is off unless the page turns it on: subscribing is already the
   // answer to "do you want my updates", so asking again costs a tap and loses
   // people. When it is on, it comes before the redirect.
-  const ask = state.ok && state.ask && !answered ? state.ask : null
-  const leaving = !!state.ok && !!state.redirect && !ask
+  const ask = state.ok && state.ask && !declined ? state.ask : null
+  // Declining is a real no: the redirect is dropped, not merely postponed.
+  const leaving = !!state.ok && !!state.redirect && !ask && !declined
 
   /**
    * Subscribed, no question: go straight to the mailbox. This has to happen in
@@ -53,7 +54,7 @@ export default function SubscribeForm({ handle, title, note, style, buttonText, 
       return
     }
     setGoing(false)
-    setAnswered(true)
+    setDeclined(true)
   }
 
   const sending = (
