@@ -9,6 +9,7 @@ type Props = {
   note: string
   style: string
   buttonText: string
+  buttonNote: string
   askName: boolean
   avatar: string
 }
@@ -18,12 +19,38 @@ const field =
 const submit =
   "rounded-full bg-white px-5 py-3 text-[15px] font-semibold text-black transition hover:brightness-90 active:scale-95 disabled:opacity-50"
 
-export default function SubscribeForm({ handle, title, note, style, buttonText, askName, avatar }: Props) {
+export default function SubscribeForm({
+  handle,
+  title,
+  note,
+  style,
+  buttonText,
+  buttonNote,
+  askName,
+  avatar,
+}: Props) {
   const [state, formAction, pending] = useActionState<SubscribeState, FormData>(subscribe, {})
   const [open, setOpen] = useState(false)
   const [declined, setDeclined] = useState(false)
   const [going, setGoing] = useState(false)
   const label = buttonText || (style === "pill" ? "Subscribe" : "Notify me")
+  const extra = buttonNote.trim()
+
+  /**
+   * The label carries the warning. "Subscribe and say hello" tells the visitor
+   * a draft is about to open, so their mail app appearing is the thing they
+   * just agreed to rather than a surprise, and the small line under it is where
+   * the reason to bother goes ("and get free gifts"). Two lines inside one
+   * button, so it is still a single tap.
+   */
+  const face = extra ? (
+    <span className="flex flex-col items-center leading-tight">
+      <span>{label}</span>
+      <span className="text-[11px] font-normal opacity-70">{extra}</span>
+    </span>
+  ) : (
+    label
+  )
 
   // The question is off unless the page turns it on: subscribing is already the
   // answer to "do you want my updates", so asking again costs a tap and loses
@@ -98,7 +125,7 @@ export default function SubscribeForm({ handle, title, note, style, buttonText, 
       {askName ? <input name="name" autoComplete="given-name" placeholder="First name" className={field} /> : null}
       <input name="email" type="email" required autoComplete="email" placeholder="Email" className={field} />
       <button type="submit" disabled={pending} className={submit + " w-full"}>
-        {pending ? "Adding..." : label}
+        {pending ? "Adding..." : face}
       </button>
       {state.error ? <p className="text-center text-sm text-red-300">{state.error}</p> : null}
     </>
@@ -113,7 +140,7 @@ export default function SubscribeForm({ handle, title, note, style, buttonText, 
           className="flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-white/20 active:scale-95"
         >
           <span aria-hidden="true">&#9788;</span>
-          {label}
+          {face}
         </button>
 
         {open ? (
@@ -184,7 +211,7 @@ export default function SubscribeForm({ handle, title, note, style, buttonText, 
                         disabled={pending}
                         className="w-full rounded-full bg-black px-5 py-3 text-[15px] font-semibold text-white transition hover:brightness-125 active:scale-95 disabled:opacity-50"
                       >
-                        {pending ? "Adding..." : label}
+                        {pending ? "Adding..." : face}
                       </button>
                       {state.error ? <p className="text-center text-sm text-red-500">{state.error}</p> : null}
                     </form>
@@ -206,7 +233,7 @@ export default function SubscribeForm({ handle, title, note, style, buttonText, 
         {askName ? <input name="name" placeholder="First name" className={field + " sm:w-32"} /> : null}
         <input name="email" type="email" required autoComplete="email" placeholder="Email" className={field} />
         <button type="submit" disabled={pending} className={submit}>
-          {pending ? "..." : label}
+          {pending ? "..." : face}
         </button>
         {state.error ? <p className="text-center text-sm text-red-300">{state.error}</p> : null}
       </form>
