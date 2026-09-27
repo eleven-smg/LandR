@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin"
 import { logLinkClick, getRequestMeta } from "@/lib/analytics"
 import { collectionDestinationFor } from "@/lib/collections"
 import { scheduleState } from "@/lib/schedule"
+import { applyUtm } from "@/lib/utm"
 import { androidIntentFor, appSchemeFor, iosBounceHtml, isAndroid, isInAppBrowser, isIos } from "@/lib/deeplink"
 
 type Destination = { url: string; disabled?: boolean }
@@ -112,24 +113,42 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     destinationUrl = ownDefault ? ownDefault.url : null
   }
 
-  const target = destinationUrl ? normalizeUrl(destinationUrl) : null
+  const chosen = destinationUrl ? normalizeUrl(destinationUrl) : null
 
-  if (!target) {
+  if (!chosen) {
     return NextResponse.redirect(new URL("/", req.url))
   }
 
+  /**
+   * The owner's page settings. Read once here because two things below need
+   * them: the campaign tags and the deep-link switch. The deep-link branch used
+   * to fetch this row itself, which meant an in-app-browser click cost two
+   * queries and a normal click read nothing at all.
+   */
+  const { data: creator } = await supabaseAdmin
+    .from("creators")
+    .select("handle, deep_links, utm_enabled, utm_source, utm_medium, utm_campaign")
+    .eq("id", link.creator_id)
+    .single()
+
+  /**
+   * 5) Campaign tags, Step 18. Applied to the destination that was already
+   * chosen, never to the choosing: whatever the rules above decided is where
+   * the visitor goes, tagged or not. Off unless the page turned it on.
+   */
+  const target = applyUtm(chosen, creator, {
+    handle: String(creator?.handle || ""),
+    label: String(link.label || ""),
+  })
+
+  // Logged with the tags on, so the analytics row is the URL the visitor
+  // actually opened rather than a cleaner one nobody was sent to.
   await logLinkClick(link.creator_id, link.id, target)
 
-  // 5) Smart deep linking. Only in-app browsers need rescuing: a normal mobile
+  // 6) Smart deep linking. Only in-app browsers need rescuing: a normal mobile
   // browser already hands https links to the installed app by itself.
   const userAgent = req.headers.get("user-agent") || ""
   if (isInAppBrowser(userAgent)) {
-    const { data: creator } = await supabaseAdmin
-      .from("creators")
-      .select("deep_links")
-      .eq("id", link.creator_id)
-      .single()
-
     if (!creator || creator.deep_links !== false) {
       if (isAndroid(userAgent)) {
         const intent = androidIntentFor(target)

@@ -14,8 +14,10 @@ import { clampPercent, clampZoom, normalizeSubscribeStyle, normalizeTemplate } f
 import { normalizeRedirectMode } from "@/lib/mailboxes"
 import { emailProviderReady } from "@/lib/welcomeEmail"
 import { scheduleState } from "@/lib/schedule"
+import { UTM_DEFAULT_MEDIUM } from "@/lib/utm"
 import {
   saveProfile,
+  saveUtm,
   addSocial,
   updateSocial,
   deleteSocial,
@@ -318,6 +320,50 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
                 labels={SECTION_LABELS}
                 action={saveSectionOrder}
               />
+            </details>
+
+            <details style={card}>
+              <summary style={sumRow}>
+                Campaign tags on your links
+                {creator.utm_enabled === true ? <span style={okTag}>on</span> : <span style={tag}>off</span>}
+              </summary>
+              <p style={hint2}>
+                Adds the usual <b>utm</b> bits to the end of every link you share, so the site you are sending people to
+                can see the traffic came from your page &mdash; and which button they tapped. It never changes where a
+                link goes.
+              </p>
+              <ActionForm action={saveUtm}>
+                <input type="hidden" name="handle" value={creator.handle} />
+                <label style={albl}>
+                  <input type="checkbox" name="utm_enabled" defaultChecked={creator.utm_enabled === true} /> tag my links
+                </label>
+                <div style={row8}>
+                  <input
+                    style={lin}
+                    name="utm_source"
+                    defaultValue={String(creator.utm_source || "")}
+                    placeholder={"source (empty = " + creator.handle + ")"}
+                  />
+                  <input
+                    style={lin}
+                    name="utm_medium"
+                    defaultValue={String(creator.utm_medium || "")}
+                    placeholder={"medium (empty = " + UTM_DEFAULT_MEDIUM + ")"}
+                  />
+                </div>
+                <input
+                  style={input}
+                  name="utm_campaign"
+                  defaultValue={String(creator.utm_campaign || "")}
+                  placeholder="campaign, optional (september-drop)"
+                />
+                <SaveButton label="Save tags" />
+              </ActionForm>
+              <p style={hint}>
+                Saved in lower case with spaces turned into dashes, because every reporting tool treats "Summer Drop" and
+                "summer-drop" as two different things. If a link you pasted already carries its own tags, yours are left
+                off that one.
+              </p>
             </details>
 
             <details style={card} open>

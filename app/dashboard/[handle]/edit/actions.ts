@@ -9,6 +9,7 @@ import { getRequestMeta } from "@/lib/analytics"
 import { tierForCountry } from "@/lib/subscriberGeo"
 import { WHITELIST_DEFAULTS, normalizeRedirectMode, resolveRedirect } from "@/lib/mailboxes"
 import { sendWelcomeEmail } from "@/lib/welcomeEmail"
+import { utmValue } from "@/lib/utm"
 
 type Social = { platform: string; url: string }
 
@@ -244,6 +245,31 @@ export async function saveProfile(formData: FormData) {
   }
 
   await supabaseAdmin.from("creators").update(patch).eq("id", access.creator.id)
+  refresh(access.creator.handle)
+}
+
+/**
+ * Step 18 - the campaign tags added to every outbound link on this page.
+ *
+ * Its own small form rather than another section of the profile form, because
+ * it is set once per campaign and then left alone. Values go through utmValue so
+ * what is stored is what will appear in the destination's report: lower case,
+ * hyphenated, no characters that would need encoding.
+ */
+export async function saveUtm(formData: FormData) {
+  const access = await accessFrom(formData)
+  if (!access) return
+
+  await supabaseAdmin
+    .from("creators")
+    .update({
+      utm_enabled: formData.get("utm_enabled") === "on",
+      utm_source: utmValue(String(formData.get("utm_source") || "")) || null,
+      utm_medium: utmValue(String(formData.get("utm_medium") || "")) || null,
+      utm_campaign: utmValue(String(formData.get("utm_campaign") || "")) || null,
+    })
+    .eq("id", access.creator.id)
+
   refresh(access.creator.handle)
 }
 
