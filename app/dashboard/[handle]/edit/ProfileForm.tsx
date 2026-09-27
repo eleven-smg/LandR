@@ -5,6 +5,7 @@ import type { CSSProperties } from "react"
 import ActionForm from "./ActionForm"
 import SaveButton from "./SaveButton"
 import { SUBSCRIBE_STYLE_LABELS, TEMPLATES, normalizeSubscribeStyle, templateInfo, normalizeTemplate } from "@/lib/templates"
+import { WHITELIST_DEFAULTS, normalizeRedirectMode } from "@/lib/mailboxes"
 
 export type ProfileValues = {
   template: string
@@ -29,6 +30,16 @@ export type ProfileValues = {
   subscribe_note: string
   subscribe_button_text: string
   subscribe_ask_name: boolean
+  whitelist_redirect_mode: string
+  whitelist_from_email: string
+  whitelist_from_name: string
+  whitelist_compose_subject: string
+  whitelist_compose_body: string
+  whitelist_prompt_enabled: boolean
+  whitelist_prompt_title: string
+  whitelist_prompt_note: string
+  whitelist_yes_label: string
+  whitelist_no_label: string
   deep_links: boolean
   share_button: boolean
 }
@@ -55,6 +66,7 @@ const sub: CSSProperties = {
 }
 const sum: CSSProperties = { fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#cdd6f4" }
 const hint: CSSProperties = { color: "#6b7396", fontSize: 11, marginTop: 6 }
+const warn: CSSProperties = { color: "#f0b072", fontSize: 11, marginTop: 6 }
 const check: CSSProperties = { fontSize: 12, color: "#9aa4c2", display: "flex", alignItems: "center", gap: 6, marginTop: 8 }
 const blurb: CSSProperties = { color: "#8892a4", fontSize: 12, marginTop: 6, lineHeight: 1.45 }
 const pickWrap: CSSProperties = { display: "flex", gap: 12, marginTop: 10, flexWrap: "wrap" }
@@ -71,6 +83,21 @@ const chip: CSSProperties = {
   cursor: "pointer",
 }
 const chipOn: CSSProperties = { ...chip, borderColor: "#5b7fff", background: "rgba(91,127,255,0.12)", color: "#cdd6f4" }
+
+/**
+ * What each mode actually does, in the words of the person choosing it. No
+ * provider lets anyone whitelist a sender on somebody else's behalf, so these
+ * are the only two honest moves -- write to you, or land on the right screen --
+ * and the wording says so rather than promising magic.
+ */
+const MODE_HINT: Record<string, string> = {
+  compose:
+    "A message to you, already written, in whichever mail app they use. Sending it is the strongest signal there is: you become a contact, and mail from a contact does not get filed as spam. They can send it and forget it.",
+  inbox:
+    "Their own mailbox. On Outlook and Proton this lands on the safe-senders screen where your address is added; on Gmail it opens a search for your mail, because Gmail has no such screen. More taps than a draft, and nothing is prefilled.",
+  page: "The short page on your own site listing the taps for their provider. Nothing happens automatically; they read and do it.",
+  off: "Nothing happens after subscribing except the thank you. Their address is still saved.",
+}
 
 export default function ProfileForm({
   action,
@@ -99,6 +126,8 @@ export default function ProfileForm({
   const usingImage = v.bg_mode === "image"
   const subStyle = normalizeSubscribeStyle(v.subscribe_style)
   const isPhoneShape = shape === "phone"
+  const redirectMode = normalizeRedirectMode(v.whitelist_redirect_mode)
+  const needsAddress = redirectMode === "compose" && !v.whitelist_from_email.trim()
 
   const frame: CSSProperties = {
     width: isPhoneShape ? 132 : 250,
@@ -399,6 +428,136 @@ export default function ProfileForm({
           />
           Ask for a first name as well as the email
         </label>
+      </details>
+
+      <details style={sub}>
+        <summary style={sum}>After they subscribe &mdash; landing in the inbox</summary>
+        <p style={blurb}>
+          Tapping subscribe is the yes, so nobody is asked a second question: the address is saved and the phone goes
+          straight where you choose here. A Gmail address goes to Gmail, an Outlook address to Outlook, and on a phone
+          whichever mail app is really installed is the one that opens.
+        </p>
+        <label style={lbl}>
+          Where subscribe takes them
+          <select
+            style={input}
+            name="whitelist_redirect_mode"
+            value={redirectMode}
+            onChange={(e) => set("whitelist_redirect_mode", e.target.value)}
+          >
+            <option value="compose">A message to you, already written</option>
+            <option value="inbox">Their own mailbox or safe-sender screen</option>
+            <option value="page">The short how-to page on your site</option>
+            <option value="off">Nowhere &mdash; just the thank you</option>
+          </select>
+        </label>
+        <p style={hint}>{MODE_HINT[redirectMode]}</p>
+        <div style={two}>
+          <label style={lbl}>
+            Your address &mdash; the one they whitelist
+            <input
+              style={input}
+              name="whitelist_from_email"
+              value={v.whitelist_from_email}
+              placeholder="you@yourdomain.com"
+              onChange={(e) => set("whitelist_from_email", e.target.value)}
+            />
+          </label>
+          <label style={lbl}>
+            Name shown beside it
+            <input
+              style={input}
+              name="whitelist_from_name"
+              value={v.whitelist_from_name}
+              placeholder={v.display_name || "Your name"}
+              onChange={(e) => set("whitelist_from_name", e.target.value)}
+            />
+          </label>
+        </div>
+        {needsAddress ? (
+          <p style={warn}>
+            No address yet, so a draft cannot be opened: subscribe falls back to their own mailbox instead. Put the
+            address you will actually send from here.
+          </p>
+        ) : null}
+        <label style={lbl}>
+          Subject of the message they send you
+          <input
+            style={input}
+            name="whitelist_compose_subject"
+            value={v.whitelist_compose_subject}
+            placeholder={WHITELIST_DEFAULTS.composeSubject}
+            onChange={(e) => set("whitelist_compose_subject", e.target.value)}
+          />
+        </label>
+        <label style={lbl}>
+          What that message says
+          <textarea
+            style={ta}
+            name="whitelist_compose_body"
+            value={v.whitelist_compose_body}
+            placeholder={WHITELIST_DEFAULTS.composeBody}
+            onChange={(e) => set("whitelist_compose_body", e.target.value)}
+          />
+        </label>
+        <p style={hint}>
+          Leave both empty to use the wording that ships with the site. Keep it short: all it has to do is get sent.
+        </p>
+        <label style={check}>
+          <input
+            type="checkbox"
+            name="whitelist_prompt_enabled"
+            checked={v.whitelist_prompt_enabled}
+            onChange={(e) => set("whitelist_prompt_enabled", e.target.checked)}
+          />
+          Ask a yes or no question first instead of going straight there
+        </label>
+        <div style={two}>
+          <label style={lbl}>
+            Question
+            <input
+              style={input}
+              name="whitelist_prompt_title"
+              value={v.whitelist_prompt_title}
+              placeholder={WHITELIST_DEFAULTS.title}
+              onChange={(e) => set("whitelist_prompt_title", e.target.value)}
+            />
+          </label>
+          <label style={lbl}>
+            Line under it
+            <input
+              style={input}
+              name="whitelist_prompt_note"
+              value={v.whitelist_prompt_note}
+              placeholder={WHITELIST_DEFAULTS.note}
+              onChange={(e) => set("whitelist_prompt_note", e.target.value)}
+            />
+          </label>
+          <label style={lbl}>
+            Yes button
+            <input
+              style={input}
+              name="whitelist_yes_label"
+              value={v.whitelist_yes_label}
+              placeholder={WHITELIST_DEFAULTS.yes}
+              onChange={(e) => set("whitelist_yes_label", e.target.value)}
+            />
+          </label>
+          <label style={lbl}>
+            No button
+            <input
+              style={input}
+              name="whitelist_no_label"
+              value={v.whitelist_no_label}
+              placeholder={WHITELIST_DEFAULTS.no}
+              onChange={(e) => set("whitelist_no_label", e.target.value)}
+            />
+          </label>
+        </div>
+        <p style={hint}>
+          With the question on, yes opens the destination above and no stops there &mdash; the address stays on your list
+          either way, and who said yes is recorded.
+        </p>
       </details>
 
       <details style={sub}>

@@ -10,6 +10,7 @@ import CountryRules from "./CountryRules"
 import { likeSafeHandle } from "@/lib/handles"
 import { SECTION_LABELS, normalizeOrder } from "@/lib/sections"
 import { clampPercent, clampZoom, normalizeSubscribeStyle, normalizeTemplate } from "@/lib/templates"
+import { normalizeRedirectMode } from "@/lib/mailboxes"
 import {
   saveProfile,
   addSocial,
@@ -199,6 +200,19 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
     subscribe_note: String(creator.subscribe_note || ""),
     subscribe_button_text: String(creator.subscribe_button_text || ""),
     subscribe_ask_name: !!creator.subscribe_ask_name,
+    // Where subscribe sends people, and the wording of the optional question.
+    // Empty strings mean "use the shipped default", which is what the inputs
+    // show as their placeholder.
+    whitelist_redirect_mode: normalizeRedirectMode(creator.whitelist_redirect_mode),
+    whitelist_from_email: String(creator.whitelist_from_email || ""),
+    whitelist_from_name: String(creator.whitelist_from_name || ""),
+    whitelist_compose_subject: String(creator.whitelist_compose_subject || ""),
+    whitelist_compose_body: String(creator.whitelist_compose_body || ""),
+    whitelist_prompt_enabled: creator.whitelist_prompt_enabled === true,
+    whitelist_prompt_title: String(creator.whitelist_prompt_title || ""),
+    whitelist_prompt_note: String(creator.whitelist_prompt_note || ""),
+    whitelist_yes_label: String(creator.whitelist_yes_label || ""),
+    whitelist_no_label: String(creator.whitelist_no_label || ""),
     deep_links: creator.deep_links !== false,
     share_button: creator.share_button !== false,
   }
