@@ -7,11 +7,13 @@ import ActionForm from "./ActionForm"
 import SectionOrder from "./SectionOrder"
 import AvatarCard from "./AvatarCard"
 import CountryRules from "./CountryRules"
+import ScheduleFields from "./ScheduleFields"
 import { likeSafeHandle } from "@/lib/handles"
 import { SECTION_LABELS, normalizeOrder } from "@/lib/sections"
 import { clampPercent, clampZoom, normalizeSubscribeStyle, normalizeTemplate } from "@/lib/templates"
 import { normalizeRedirectMode } from "@/lib/mailboxes"
 import { emailProviderReady } from "@/lib/welcomeEmail"
+import { scheduleState } from "@/lib/schedule"
 import {
   saveProfile,
   addSocial,
@@ -332,12 +334,19 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
                 const type = String(l.type || "button")
                 const hidden = l.is_active === false
                 const geoRules = (l.geo_rules as { countries: string[]; url: string }[]) || []
+                // Same rule the public page and /go/[id] use, so a link kept off
+                // the page by its dates says so here instead of looking broken.
+                const sched = scheduleState({
+                  starts_at: l.starts_at as string | null,
+                  ends_at: l.ends_at as string | null,
+                })
                 return (
                   <details key={String(l.id)} style={item}>
                     <summary style={sumRow}>
                       <span style={{ flex: 1 }}>{label}</span>
                       <span style={tag}>{type}</span>
                       {hidden ? <span style={tag}>hidden</span> : null}
+                      {sched !== "live" ? <span style={tag}>{sched}</span> : null}
                     </summary>
 
                     <ActionForm action={updateLink}>
@@ -377,6 +386,10 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
                           <input type="checkbox" name="is_active" defaultChecked={l.is_active !== false} /> active
                         </label>
                       </div>
+                      <ScheduleFields
+                        startsAt={String(l.starts_at || "")}
+                        endsAt={String(l.ends_at || "")}
+                      />
                       <SaveButton label="Save link" />
                     </ActionForm>
 
