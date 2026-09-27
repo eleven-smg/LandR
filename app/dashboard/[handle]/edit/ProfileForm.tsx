@@ -6,6 +6,7 @@ import ActionForm from "./ActionForm"
 import SaveButton from "./SaveButton"
 import { SUBSCRIBE_STYLE_LABELS, TEMPLATES, normalizeSubscribeStyle, templateInfo, normalizeTemplate } from "@/lib/templates"
 import { WHITELIST_DEFAULTS, normalizeRedirectMode } from "@/lib/mailboxes"
+import { WELCOME_DEFAULTS } from "@/lib/welcomeCopy"
 
 export type ProfileValues = {
   template: string
@@ -41,6 +42,11 @@ export type ProfileValues = {
   whitelist_prompt_note: string
   whitelist_yes_label: string
   whitelist_no_label: string
+  welcome_email_enabled: boolean
+  welcome_email_from: string
+  welcome_email_reply_to: string
+  welcome_email_subject: string
+  welcome_email_body: string
   deep_links: boolean
   share_button: boolean
 }
@@ -57,6 +63,7 @@ const input: CSSProperties = {
 }
 const lbl: CSSProperties = { fontSize: 12, color: "#9aa4c2", display: "block" }
 const ta: CSSProperties = { ...input, minHeight: 60 }
+const bodyTa: CSSProperties = { ...input, minHeight: 132, fontFamily: "inherit", lineHeight: 1.45 }
 const two: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }
 const sub: CSSProperties = {
   border: "1px solid #232940",
@@ -96,6 +103,7 @@ const preview: CSSProperties = {
 }
 const previewMain: CSSProperties = { fontSize: 15, fontWeight: 600, display: "block" }
 const previewNote: CSSProperties = { fontSize: 11, opacity: 0.7, display: "block" }
+const stateOn: CSSProperties = { color: "#4ade80", fontSize: 11, marginTop: 6 }
 
 /**
  * What each mode actually does, in the words of the person choosing it. No
@@ -117,11 +125,14 @@ export default function ProfileForm({
   handle,
   values,
   bgImageUrl,
+  emailReady,
 }: {
   action: (formData: FormData) => Promise<void>
   handle: string
   values: ProfileValues
   bgImageUrl: string
+  /** Whether a sending service exists on the server at all. */
+  emailReady: boolean
 }) {
   // Every value lives in state, and ActionForm submits without letting React
   // reset the form, so what you pick stays picked after a save.
@@ -143,6 +154,9 @@ export default function ProfileForm({
   const needsAddress = redirectMode === "compose" && !v.whitelist_from_email.trim()
   const buttonMain = v.subscribe_button_text.trim() || (subStyle === "pill" ? "Subscribe" : "Notify me")
   const buttonNote = v.subscribe_button_note.trim()
+  // On, connected, and with an address to send as: the only combination that
+  // actually puts mail in somebody's inbox.
+  const welcomeLive = v.welcome_email_enabled && emailReady && !!v.welcome_email_from.trim()
 
   const frame: CSSProperties = {
     width: isPhoneShape ? 132 : 250,
@@ -591,6 +605,88 @@ export default function ProfileForm({
         <p style={hint}>
           With the question on, yes opens the destination above and no stops there &mdash; the address stays on your list
           either way, and who said yes is recorded.
+        </p>
+      </details>
+
+      <details style={sub}>
+        <summary style={sum}>The welcome email &mdash; sent by the site, from you</summary>
+        <label style={check}>
+          <input
+            type="checkbox"
+            name="welcome_email_enabled"
+            checked={v.welcome_email_enabled}
+            onChange={(e) => set("welcome_email_enabled", e.target.checked)}
+          />
+          Send a welcome email to every new subscriber
+        </label>
+        <p style={blurb}>
+          This is the off switch. Unticked &mdash; which is how every page starts &mdash; nothing is sent, nothing is
+          drafted and nobody is mailed; the address is still saved and the rest of the page behaves exactly as it does
+          today. Tick it when you want the message below to go out on its own.
+        </p>
+        {emailReady ? null : (
+          <p style={warn}>
+            No sending service is attached to this site yet, so nothing leaves the server even with the box ticked &mdash;
+            each attempt is written down as skipped instead. Writing the message now is safe; it starts going out the day
+            the service is attached.
+          </p>
+        )}
+        {welcomeLive ? <p style={stateOn}>On &mdash; new subscribers will get this message.</p> : null}
+        <div style={two}>
+          <label style={lbl}>
+            Send from
+            <input
+              style={input}
+              name="welcome_email_from"
+              value={v.welcome_email_from}
+              placeholder={v.whitelist_from_email || "you@yourdomain.com"}
+              onChange={(e) => set("welcome_email_from", e.target.value)}
+            />
+          </label>
+          <label style={lbl}>
+            Replies go to &mdash; empty means the same address
+            <input
+              style={input}
+              name="welcome_email_reply_to"
+              value={v.welcome_email_reply_to}
+              placeholder={v.welcome_email_from || "you@yourdomain.com"}
+              onChange={(e) => set("welcome_email_reply_to", e.target.value)}
+            />
+          </label>
+        </div>
+        {v.welcome_email_enabled && !v.welcome_email_from.trim() ? (
+          <p style={warn}>Ticked, but with no address to send from nothing can go out. Fill in &ldquo;Send from&rdquo;.</p>
+        ) : null}
+        <label style={lbl}>
+          Subject
+          <input
+            style={input}
+            name="welcome_email_subject"
+            value={v.welcome_email_subject}
+            placeholder={WELCOME_DEFAULTS.subject}
+            onChange={(e) => set("welcome_email_subject", e.target.value)}
+          />
+        </label>
+        <label style={lbl}>
+          The message
+          <textarea
+            style={bodyTa}
+            name="welcome_email_body"
+            value={v.welcome_email_body}
+            placeholder={WELCOME_DEFAULTS.body}
+            onChange={(e) => set("welcome_email_body", e.target.value)}
+          />
+        </label>
+        <p style={hint}>
+          Put {"{name}"} where their first name belongs, {"{handle}"} for your page name, {"{email}"} for their own
+          address. Somebody who subscribed without leaving a name reads as &ldquo;there&rdquo;. Leave the subject or the
+          message empty to use the wording that ships with the site.
+        </p>
+        <p style={hint}>
+          You never log a mailbox into this site and you never give it a mail password. A sending service holds a key on
+          the server and delivers the message as your own address, so this site cannot read your inbox &mdash; replies
+          arrive in your normal mail app. An unsubscribe line is added to the bottom for you; a bulk mail without one is
+          what gets a sender blocked.
         </p>
       </details>
 

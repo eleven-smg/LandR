@@ -11,6 +11,7 @@ import { likeSafeHandle } from "@/lib/handles"
 import { SECTION_LABELS, normalizeOrder } from "@/lib/sections"
 import { clampPercent, clampZoom, normalizeSubscribeStyle, normalizeTemplate } from "@/lib/templates"
 import { normalizeRedirectMode } from "@/lib/mailboxes"
+import { emailProviderReady } from "@/lib/welcomeEmail"
 import {
   saveProfile,
   addSocial,
@@ -166,6 +167,13 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
   // point at all of it, at a world tier, or at countries picked by hand.
   const flaggedCountries = ((creator.blocked_countries as string[]) || []).map((c) => String(c).toUpperCase())
 
+  /**
+   * Whether this deployment has a sending service at all. Read on the server,
+   * because the key must never reach the browser -- only this yes or no does, so
+   * the editor can say plainly that a ticked switch still sends nothing.
+   */
+  const emailReady = emailProviderReady()
+
   const builderItems = rows.map((l: Record<string, unknown>) => ({
     id: String(l.id),
     label: String(l.label || ""),
@@ -215,6 +223,12 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
     whitelist_prompt_note: String(creator.whitelist_prompt_note || ""),
     whitelist_yes_label: String(creator.whitelist_yes_label || ""),
     whitelist_no_label: String(creator.whitelist_no_label || ""),
+    // The welcome email. Off unless this page explicitly turned it on.
+    welcome_email_enabled: creator.welcome_email_enabled === true,
+    welcome_email_from: String(creator.welcome_email_from || ""),
+    welcome_email_reply_to: String(creator.welcome_email_reply_to || ""),
+    welcome_email_subject: String(creator.welcome_email_subject || ""),
+    welcome_email_body: String(creator.welcome_email_body || ""),
     deep_links: creator.deep_links !== false,
     share_button: creator.share_button !== false,
   }
@@ -253,7 +267,13 @@ export default async function EditPage({ params }: { params: Promise<{ handle: s
 
             <details style={card} open>
               <summary style={sumStyle}>Page look</summary>
-              <ProfileForm action={saveProfile} handle={String(creator.handle)} values={profileValues} bgImageUrl={bgImageUrl} />
+              <ProfileForm
+                action={saveProfile}
+                handle={String(creator.handle)}
+                values={profileValues}
+                bgImageUrl={bgImageUrl}
+                emailReady={emailReady}
+              />
             </details>
 
             <details style={card}>
