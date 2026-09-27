@@ -22,6 +22,7 @@ type Item = { slug: string; label: string; icon: string }
 const ITEMS: Item[] = [
   { slug: "", label: "Analytics", icon: "chart" },
   { slug: "heatmap", label: "Best time", icon: "clock" },
+  { slug: "experiments", label: "A/B tests", icon: "split" },
   { slug: "edit", label: "Page Editor", icon: "pencil" },
   { slug: "collections", label: "Collections", icon: "grid" },
   { slug: "geoblocking", label: "Country rules", icon: "globe" },
@@ -58,6 +59,16 @@ function NavIcon({ name }: { name: string }) {
       <svg {...common}>
         <circle cx="12" cy="12" r="9" />
         <polyline points="12 7 12 12 15.5 14" />
+      </svg>
+    )
+  }
+  if (name === "split") {
+    return (
+      <svg {...common}>
+        <path d="M12 20V10" />
+        <path d="M12 10 6 4" />
+        <path d="m12 10 6-6" />
+        <circle cx="12" cy="20" r="1.6" />
       </svg>
     )
   }
