@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState, useState } from "react"
+import { useActionState, useEffect, useState } from "react"
 import { markUpdatesChoice, subscribe, type SubscribeState } from "../dashboard/[handle]/edit/actions"
 
 type Props = {
@@ -25,14 +25,22 @@ export default function SubscribeForm({ handle, title, note, style, buttonText, 
   const [going, setGoing] = useState(false)
   const label = buttonText || (style === "pill" ? "Subscribe" : "Notify me")
 
+  // The question is off unless the page turns it on: subscribing is already the
+  // answer to "do you want my updates", so asking again costs a tap and loses
+  // people. When it is on, it comes before the redirect.
   const ask = state.ok && state.ask && !answered ? state.ask : null
+  const leaving = !!state.ok && !!state.redirect && !ask
 
   /**
-   * Yes means the subscriber wants to be walked through trusting the sender, so
-   * the answer is recorded and the walkthrough opens. The recording is not
-   * allowed to block the redirect: if it fails the visitor still gets the
-   * instructions, which is the part that matters to them.
+   * Subscribed, no question: go straight to the mailbox. This has to happen in
+   * the browser rather than as a server redirect, because the destination is
+   * often a mailto: draft, which only the device can open.
    */
+  useEffect(() => {
+    if (!leaving || !state.redirect) return
+    window.location.href = state.redirect
+  }, [leaving, state.redirect])
+
   async function answer(wants: boolean) {
     setGoing(wants)
     try {
@@ -40,13 +48,20 @@ export default function SubscribeForm({ handle, title, note, style, buttonText, 
     } catch {
       // Recording the preference is a nice-to-have; never strand the visitor.
     }
-    if (wants && state.ask) {
-      window.location.href = state.ask.url
+    if (wants && state.redirect) {
+      window.location.href = state.redirect
       return
     }
     setGoing(false)
     setAnswered(true)
   }
+
+  const sending = (
+    <div className="w-full rounded-2xl border border-white/15 bg-white/5 p-5 text-center">
+      <p className="text-[15px] font-semibold text-white">You&rsquo;re on the list &#10003;</p>
+      <p className="mt-1 text-sm text-white/60">Opening your email so my messages reach your inbox...</p>
+    </div>
+  )
 
   const askCard = ask ? (
     <div className="w-full rounded-2xl border border-white/15 bg-white/5 p-5 text-center">
@@ -73,6 +88,8 @@ export default function SubscribeForm({ handle, title, note, style, buttonText, 
       <p className="mt-1 text-sm text-emerald-200/70">Thanks &mdash; I&rsquo;ll be in touch.</p>
     </div>
   )
+
+  const after = ask ? askCard : leaving ? sending : done
 
   const inputs = (
     <>
@@ -139,7 +156,9 @@ export default function SubscribeForm({ handle, title, note, style, buttonText, 
                   <p className="mt-3 text-base font-bold">{title}</p>
                   {note ? <p className="mt-1 text-sm text-black/60">{note}</p> : null}
                   {state.ok ? (
-                    <p className="mt-5 text-[15px] font-semibold text-emerald-600">You&rsquo;re on the list &#10003;</p>
+                    <p className="mt-5 text-[15px] font-semibold text-emerald-600">
+                      {leaving ? "Opening your email..." : "You\u2019re on the list \u2713"}
+                    </p>
                   ) : (
                     <form action={formAction} className="mt-5 flex flex-col gap-3 text-left">
                       <input type="hidden" name="handle" value={handle} />
@@ -179,8 +198,7 @@ export default function SubscribeForm({ handle, title, note, style, buttonText, 
   }
 
   if (style === "bar") {
-    if (ask) return <div className="mt-6 w-full">{askCard}</div>
-    if (state.ok) return <div className="mt-6 w-full">{done}</div>
+    if (state.ok) return <div className="mt-6 w-full">{after}</div>
     return (
       <form action={formAction} className="mt-6 flex w-full flex-col gap-2 sm:flex-row">
         <input type="hidden" name="handle" value={handle} />
@@ -194,8 +212,7 @@ export default function SubscribeForm({ handle, title, note, style, buttonText, 
     )
   }
 
-  if (ask) return <div className="mt-8 w-full">{askCard}</div>
-  if (state.ok) return <div className="mt-8 w-full">{done}</div>
+  if (state.ok) return <div className="mt-8 w-full">{after}</div>
 
   return (
     <form action={formAction} className="mt-8 flex w-full flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 p-5">

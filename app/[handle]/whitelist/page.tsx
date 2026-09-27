@@ -2,21 +2,18 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
 import { likeSafeHandle } from "@/lib/handles"
-import { mailboxFor } from "@/lib/mailboxes"
+import { WHITELIST_DEFAULTS, mailboxFor, mailtoUrl } from "@/lib/mailboxes"
 
 export const dynamic = "force-dynamic"
 
 /**
- * Where "yes, keep me updated" lands. The whole point of this screen is that
- * the instructions are for the provider the subscriber actually uses, so it is
- * four taps and not a wall of advice about mail clients they have never opened.
+ * The walkthrough. No longer the default landing spot -- subscribing now goes
+ * straight to the mailbox -- but kept as the "page" redirect mode, and as the
+ * fallback for a provider with no usable URL, because instructions beat a dead
+ * end.
  *
  * The mailbox comes in as ?mb=gmail.com -- the domain only, never the address,
  * so a shared or logged link cannot leak who subscribed.
- *
- * No session: a subscriber is not signed in, and nothing here reads subscriber
- * data. It only renders the creator's own sending address, which is public by
- * definition once she mails anyone.
  */
 export default async function WhitelistPage({
   params,
@@ -30,7 +27,9 @@ export default async function WhitelistPage({
 
   const { data: creator } = await supabaseAdmin
     .from("creators")
-    .select("handle, display_name, whitelist_from_email, whitelist_from_name")
+    .select(
+      "handle, display_name, whitelist_from_email, whitelist_from_name, whitelist_compose_subject, whitelist_compose_body",
+    )
     .ilike("handle", likeSafeHandle(handle))
     .maybeSingle()
 
@@ -39,6 +38,14 @@ export default async function WhitelistPage({
   const fromEmail = String(creator.whitelist_from_email || "")
   const fromName = String(creator.whitelist_from_name || creator.display_name || creator.handle || "")
   const box = mailboxFor(mb || "", fromEmail)
+
+  const draft = fromEmail
+    ? mailtoUrl(
+        fromEmail,
+        String(creator.whitelist_compose_subject || "") || WHITELIST_DEFAULTS.composeSubject,
+        String(creator.whitelist_compose_body || "") || WHITELIST_DEFAULTS.composeBody,
+      )
+    : ""
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center gap-6 bg-black px-5 py-12 text-white">
@@ -58,10 +65,23 @@ export default async function WhitelistPage({
         </div>
       ) : null}
 
+      {draft ? (
+        <a
+          href={draft}
+          className="rounded-full bg-white px-5 py-3 text-center text-[15px] font-semibold text-black transition hover:brightness-90 active:scale-95"
+        >
+          Fastest: email me back
+        </a>
+      ) : null}
+      {draft ? (
+        <p className="-mt-3 text-center text-[11px] leading-relaxed text-white/35">
+          Sending it puts me in your contacts, and mail from a contact does not go to spam.
+        </p>
+      ) : null}
+
       <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
         <p className="text-sm font-semibold text-white/80">
-          In {box.label}
-          {box.id === "other" ? "" : " \u2014 the fastest way"}
+          Or do it by hand in {box.label}
         </p>
         <ol className="mt-3 flex flex-col gap-3">
           {box.steps.map((step, index) => (
@@ -81,7 +101,7 @@ export default async function WhitelistPage({
             href={box.actionUrl}
             target="_blank"
             rel="noreferrer"
-            className="rounded-full bg-white px-5 py-3 text-center text-[15px] font-semibold text-black transition hover:brightness-90 active:scale-95"
+            className="rounded-full border border-white/20 bg-white/10 px-5 py-3 text-center text-[15px] font-semibold text-white transition hover:bg-white/20 active:scale-95"
           >
             {box.actionLabel}
           </a>
@@ -90,7 +110,7 @@ export default async function WhitelistPage({
             href={box.inboxUrl}
             target="_blank"
             rel="noreferrer"
-            className="rounded-full bg-white px-5 py-3 text-center text-[15px] font-semibold text-black transition hover:brightness-90 active:scale-95"
+            className="rounded-full border border-white/20 bg-white/10 px-5 py-3 text-center text-[15px] font-semibold text-white transition hover:bg-white/20 active:scale-95"
           >
             Open {box.label}
           </a>
