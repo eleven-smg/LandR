@@ -6,11 +6,12 @@
 
 - `eleven-smg/LandR` (private). Previously moved to the `eleven-smgg` **org** by accident, which
   broke Vercel (Hobby cannot connect private org repos); transferred back, Vercel↔Git reconnected.
-- `main` head is **`882ffea9`** — Step 18, campaign tags. The 27 Sep session added, in order:
-  `4245acb8` (BUGS only), `38ffe4cd` (unsubscribe), `79c02f18` + `8a5043ef` + `e260217a` (welcome
-  email), `c9fedb48` (keep-alive), `d27a2897` + `533ce01a` (Step 19 editor fields), `882ffea9`
-  (Step 18). The 26 Sep session added ~35 commits on top of the 25 Aug head `bb021b79`
-  (see `SESSION-LOG.md`).
+- `main` head is **`1ebde424`** — Step 17, the live visitor counter. The 27 Sep session added, in
+  order: `4245acb8` (BUGS only), `38ffe4cd` (unsubscribe), `79c02f18` + `8a5043ef` + `e260217a`
+  (welcome email), `c9fedb48` (keep-alive), `d27a2897` + `533ce01a` (Step 19 editor fields),
+  `882ffea9` (Step 18), `ce0d75a4` + `98d7a2aa` + `7f5539ec` + `5dc83800` (the memory pass),
+  `0c09ec5f` (Step 14 heatmap), `1ebde424` (Step 17 live counter). The 26 Sep session added ~35
+  commits on top of the 25 Aug head `bb021b79` (see `SESSION-LOG.md`).
 - `restore/editor-embeds-and-schema` @ `549239c7` — stale, delete (A30).
 - Both branches unprotected. A typecheck workflow exists (`a260660b`) but **no tool here can read its
   result**, so every code commit is CODE proof only, never LIVE (B14). The client's forwarded Vercel
@@ -25,7 +26,7 @@
 app/  GlobalProgress.tsx  layout.tsx  page.tsx  globals.css  icon.svg
       [handle]/   page.tsx  EmbedShowcase.tsx  SubscribeForm.tsx  ShareButton.tsx  Tracker.tsx
                   whitelist/  contact.vcf/
-      api/track/  api/keepalive/route.ts (new 27 Sep)
+      api/track/  api/keepalive/route.ts (new 27 Sep)  api/online/route.ts (new 27 Sep)
       go/[id]/route.ts   unsubscribe/{page.tsx,actions.ts} (new 27 Sep)
       signin/{page,actions}  register/{page,actions}
       dashboard/  page.tsx (creator home)  actions.ts (team + work claim)  compare/
@@ -34,6 +35,7 @@ app/  GlobalProgress.tsx  layout.tsx  page.tsx  globals.css  icon.svg
                            edit/  ActionForm AvatarCard Builder CountryRules ProfileForm
                                   SaveButton SectionOrder ScheduleFields (new 27 Sep)
                                   actions.ts mediaActions.ts orderActions.ts page.tsx
+                           heatmap/  page.tsx Heatmap.tsx OnlineNow.tsx (all new 27 Sep)
                            export/route.ts  users/ (= Team)  collections/  geoblocking/
 lib/  analytics collectionScope collections countryGroups creatorTeam deeplink handles
       mailboxes progress schedule sections session signupLimit subscriberGeo supabaseAdmin
@@ -42,16 +44,22 @@ sql/schema.sql (STALE - see BUGS B5)   middleware.ts   next.config.ts   vercel.j
 AGENTS.md   .env.example   memory/
 ```
 
-`middleware.ts` matches **only `/dashboard`**, so `/api/keepalive`, `/unsubscribe` and `/go/[id]`
-are deliberately outside the auth gate.
+`middleware.ts` matches **only `/dashboard`**, so `/api/keepalive`, `/api/online`, `/unsubscribe` and
+`/go/[id]` are outside the auth gate. That is deliberate for the first three; `/api/online` returns
+visitor numbers, so it calls `requireDashboardAccess(handle)` itself — route handlers never run a
+layout, which is F12's rule.
+
+Dashboard tabs, in sidebar order: Analytics, **Best time** (new 27 Sep, `slug: "heatmap"`, clock
+icon), Page Editor, Collections, Country rules, Team.
 
 `app/favicon.ico` was **deleted** on 26 Sep (`b33785e8`); the mark is now `app/icon.svg` only.
 
 ## Hosting
 
 - Live: `https://alandr.vercel.app` — `/`, `/ava`, `/signin`, `/register`, `/dashboard`,
-  `/dashboard/compare`, `/dashboard/ava`, `/dashboard/ava/edit`, `/dashboard/ava/users`,
-  `/{handle}/whitelist`, `/{handle}/contact.vcf`, `/unsubscribe`, `/api/keepalive`, `/api/track`.
+  `/dashboard/compare`, `/dashboard/ava`, `/dashboard/ava/edit`, `/dashboard/ava/heatmap`,
+  `/dashboard/ava/users`, `/{handle}/whitelist`, `/{handle}/contact.vcf`, `/unsubscribe`,
+  `/api/keepalive`, `/api/online`, `/api/track`.
 - Vercel project: `vercel.com/leven-smg/land-r` → Deployments: `https://vercel.com/leven-smg/land-r/deployments`
   (always send this link to the client).
 - Hobby plan, non-commercial terms; a custom domain (Step 8) may need a paid plan.
@@ -133,6 +141,18 @@ are deliberately outside the auth gate.
 - `unsubscribed_at` is stamped by `/unsubscribe`, which also sets `wants_updates = false`, guarded on
   `.is("unsubscribed_at", null)` so a second click cannot rewrite the date.
 
+### page_views / link_clicks (re-read 27 Sep)
+
+- `page_views(id, creator_id, created_at, country, region, city, device, browser, os, referrer,
+  source, path, visitor_id, session_id, duration_seconds, language, screen)`.
+- `link_clicks(id, creator_id, link_id, created_at, country, region, city, device, browser, os,
+  referrer, source, destination_url, visitor_id, session_id)`.
+- **Neither table has any `utm_*` column**, which is exactly why B12 is still open: the Mediums tile
+  needs incoming `utm_*` captured onto `page_views` (a migration), and Events needs a table that does
+  not exist yet.
+- `duration_seconds` is what `/api/online` adds to `created_at` to decide whether a session is still
+  present, and what the analytics page uses for time-on-page. The heatmap uses `created_at` only.
+
 ### links
 
 - `starts_at` / `ends_at` (timestamptz, nullable) have existed since August. Enforced since 26 Sep in
@@ -172,6 +192,10 @@ are deliberately outside the auth gate.
 | creator_clients | 0 |
 | signup_log | 0 — the table now has a writer (F29); expect rows once a real signup happens |
 
+With 229 views on one page and 3 on the other, the heatmap's 90-day window and 5,000-row cap are
+nowhere near binding, and the grid will be sparse — which the screen states plainly rather than
+naming a "best hour" from a handful of visits.
+
 ### Migrations applied
 
 ```
@@ -187,6 +211,8 @@ creator_clients_work_claim                        (26 Sep 2026)
 welcome_email_settings_and_send_log               (27 Sep 2026)
 utm_tagging_settings                              (27 Sep 2026)
 ```
+
+Steps 14 and 17 added **no** migration — both read tables that already existed.
 
 ### Advisors
 

@@ -3,7 +3,7 @@
 **Plan of record:** the 24-step pack from `project landr.zip`. Added scope from the chat sessions
 is Part 2. No other roadmap.
 
-**Last verified:** 2026-09-27 against `main @ ce0d75a4` (Step 18 campaign tags). Schema facts and
+**Last verified:** 2026-09-27 against `main @ 1ebde424` (Step 17 live counter). Schema facts and
 **row counts** in `STATE.md` were re-read live on 27 Sep — the Supabase MCP server is connected and
 working (`execute_sql` and `apply_migration` both exercised today), which retires the "no database
 reads since Block 4" limit that qualified every line of this file on 26 Sep.
@@ -31,10 +31,10 @@ exercised by a real user · `NONE`
 | 11 | Public Self-Serve Sign-Up | DONE | LIVE | **Deviation:** route is `/register`, not `/signup`; writes `accounts` + a `creators` page. Rate-limited since `d721982b` (F29). The one test page `/jaero_yt` is a real registration, not a duplicate of `/ava` — re-checked 27 Sep, `creators` holds exactly two rows. |
 | 12 | Rotate Your Secret Keys | CANCELLED | — | Client declined outright (22 Aug, restated later). Keys leaked into the chat archive and the handoff PDF remain live. Do not raise again; recorded in `DECISIONS.md`. |
 | 13 | Analytics Date-Range Picker | DONE | LIVE | **Deviation:** Day / Week / Month / Year tabs instead of 7 / 30 / 90 / All time. |
-| 14 | Best-Time-to-Post Heatmap (7×24) | NOT STARTED | NONE | No heatmap in `app/dashboard/[handle]/page.tsx`. |
+| 14 | Best-Time-to-Post Heatmap (7×24) | DONE | CODE | Shipped 27 Sep, `0c09ec5f`. **Deviation: it has its own dashboard tab, "Best time"** (`app/dashboard/[handle]/heatmap/`), not a tile on the analytics page — that page is already 24 KB and a 7×24 grid needs the full width. `page.tsx` (server, `force-dynamic`) reads `created_at` from `page_views` and `link_clicks` for the last 90 days with a 5,000-row cap per table; `Heatmap.tsx` (client) draws the grid with a **Page views / Link clicks** toggle, names the three busiest slots in a plain sentence, and prints the tz and cap notes. **Hours are bucketed in the viewer's own browser clock**, so the answer means what a person reading it thinks it means; the grid therefore renders empty on the server and fills in a `useEffect`, which is the hydration-safe pattern from Step 19. No migration. Honest empty state when there is nothing to show — Ava's 229 views will make a thin grid, and it says so rather than implying a best hour. |
 | 15 | Traffic Sources Table (views, clicks & CTR) | PARTIAL | LIVE | Referrer/source breakdowns and per-link click rate shipped; the **Mediums** and **Events** tiles still render "not built yet". Step 18 did **not** close this: today's tagging is applied to links leaving LandR, so it populates the client's own destination analytics, not ours. Our Mediums tile needs `utm_*` read from **incoming** visitor URLs into `page_views`, and Events needs an events table. B12 stands. |
 | 16 | CSV Export | DONE | CODE | Four exports via `dashboard/[handle]/export/route.ts`, 20k row cap: views, clicks, per-link, and the pack's **subscribers list**, added 26 Sep by `5abd8b6f` (F30). All four follow the collection filter and name each row's page (F25). The subscribers CSV **ignores the date tabs on purpose** — a mailing list cut to seven days looks complete and is not — so it downloads the whole list, the screen says so, and its filename carries no range. Unsubscribes are exported and marked, which is how B26 was found; since F33 that column finally has a writer. The route was unauthenticated (B1) — fixed 26 Sep by `d56f5952`, logged as F10. |
-| 17 | Live Visitor Counter ("N online now") | NOT STARTED | NONE | — |
+| 17 | Live Visitor Counter ("N online now") | DONE | CODE | Shipped 27 Sep, `1ebde424`, on the same **Best time** tab as Step 14. `app/api/online/route.ts` (GET `?handle=`) is **gated by `requireDashboardAccess`** — a route handler runs no layout, so it gates itself (F12's rule) — reads the last 30 minutes of `page_views`, counts a session present when `created_at + duration_seconds` reaches within 5 minutes of now, dedupes on `session_id` then `visitor_id`, and sends `Cache-Control: no-store`. On a read error it returns `online: null`, never a zero that would read as a fact. `heatmap/OnlineNow.tsx` polls every 20 s, shows nothing until the first reply rather than a flash of "0", and uses plain wording when nobody is there. No migration. |
 | 18 | UTM Link Builder (`/dashboard/[handle]/utm`) | DONE | CODE | **Deviation, and it is the whole point of the step's redesign:** there is no `/utm` builder route that hands back a string to copy. The client's links already live in LandR, so tagging is a setting, not a tool — one switch plus source / medium / campaign in the editor ("Campaign tags on your links"), and `/go/[id]` tags every outgoing destination itself. Shipped 27 Sep: migration `utm_tagging_settings` (`creators` += `utm_enabled` bool default false, `utm_source`, `utm_medium`, `utm_campaign`) and `882ffea9` — `lib/utm.ts` (`utmValue` sanitiser, `applyUtm`), `saveUtm` in `edit/actions.ts`, the editor card, and `/go/[id]` fetching the creator row once for handle + deep-links + the four columns. Rules: tagging runs **after** the destination is decided so it can never change routing; it **never overwrites a parameter the destination already carries**; a URL it cannot parse, or one that is not http(s), is returned untouched; source falls back to the handle, medium to `link`, and `utm_content` is the button label. Off by default. The click is logged with the tagged URL. |
 | 19 | Scheduled & Expiring Links | DONE | CODE | **Both halves now shipped.** Enforcement, 26 Sep: `lib/schedule.ts` (`scheduleState`, `isLinkLive`) is the single seam — `app/[handle]/page.tsx` filters buttons, videos and embeds through it (`c78d26d2`) and `/go/[id]` refuses an out-of-window link before any other rule and **does not log a click** (`dea5395b`), because the `/go` URL is shareable and crawlable, so hiding the button alone would make "expired" mean "harder to find". Editor, 27 Sep: `d27a2897` adds `edit/ScheduleFields.tsx` (two `datetime-local` inputs, a hidden `tz_offset` taken from the browser, a plain-words sentence saying what will happen, a Clear dates button and a warning when the end is not after the start) and teaches `updateLink` to write `starts_at` / `ends_at` **only when the form carries them**, so every other save path leaves the dates alone; `533ce01a` renders the fields in the per-link form and prints a `scheduled` / `expired` tag on the row. Both bounds stay optional, every existing row still has neither, and `?preview=1` shows everything. No migration — the columns have existed since August. |
 | 20 | A/B Testing (variant performance) | NOT STARTED | NONE | No `experiments/` route. Depends on Step 7 rotation, which is built. |
@@ -43,7 +43,7 @@ exercised by a real user · `NONE`
 | 23 | Cookie / Consent Banner | NOT STARTED | NONE | No consent component anywhere in `app/`. |
 | 24 | Email Broadcast (Resend) | NOT STARTED | NONE | No `broadcast/` route. **Unblocked but not buildable to LIVE:** B26 is closed (F33), and D2 built the whole sending seam — `lib/welcomeEmail.ts`, the `email_sends` log, the `List-Unsubscribe` header — so a broadcast screen is now mostly a query plus that seam. It cannot send anything until `RESEND_API_KEY` and a verified domain exist, which is the client's Wednesday list. |
 
-**Pack totals:** 14 DONE · 2 PARTIAL · 7 NOT STARTED · 1 CANCELLED.
+**Pack totals:** 16 DONE · 2 PARTIAL · 5 NOT STARTED · 1 CANCELLED.
 
 ---
 
@@ -115,6 +115,7 @@ proved LIVE until he supplies `RESEND_API_KEY` and a verified sending domain on 
 | D2 | **Welcome email on subscribe** | DONE | CODE | Migration `welcome_email_settings_and_send_log`: `creators` += five `welcome_email_*` columns; new `email_sends` table (RLS on, no policies — service role only), index `(creator_id, created_at desc)`. Code: `79c02f18` (`lib/welcomeCopy.ts`, `lib/welcomeEmail.ts`), `8a5043ef` (`subscribe()` sends **only** when the insert actually succeeded, so a duplicate address is never mailed twice; `saveProfile` guarded on `welcome_email_subject`), `e260217a` (editor section + `emailReady` flag). **Off by default on every page**, and the editor says outright that nothing can send until the key exists. Carries `List-Unsubscribe` (header only — no one-click POST, which would need an endpoint that trusts an unauthenticated mail provider). |
 | D3 | **Keep-alive cron** — the free-tier pause, B8 | DONE | CODE | `c9fedb48`: `app/api/keepalive/route.ts` runs one cheap count and `vercel.json` calls it daily at `0 6 * * *`, which is what Hobby allows. This is the agreed alternative to paying for Supabase (`DECISIONS.md`). Configured, **not yet observed running** — the first proof will be the project still being awake after a quiet week. |
 | D4 | Campaign tags on outgoing links | DONE | CODE | Recorded as Step 18 above. |
+| D5 | Best-time heatmap and live counter on a new **Best time** tab | DONE | CODE | Recorded as Steps 14 and 17 above. Both read existing tables only — no migration, no new column, nothing for the client to switch on. |
 
 ---
 
@@ -137,8 +138,14 @@ enforcement half** (`dea5395b` + `c78d26d2`).
 rule in this project: never split a caller and its callee across commits. After that: the Supabase
 MCP was found to be working all along (the earlier "not connected" report is retracted in `BUGS.md`),
 which made the first database reads since 3 Sep possible; **the schedule editor** finished Step 19;
-**campaign tags** closed Step 18 with a deliberate redesign; and the mailing groundwork — unsubscribe,
-welcome email, keep-alive — went in as D1–D3.
+**campaign tags** closed Step 18 with a deliberate redesign; the mailing groundwork — unsubscribe,
+welcome email, keep-alive — went in as D1–D3; and then **Steps 14 and 17**, the heatmap and the live
+counter, which share a new **Best time** dashboard tab.
+
+**Why those two went on their own tab.** The analytics page is a single 24 KB file, and a whole-file
+resend of it is the exact shape of the mistakes that broke two builds this morning. A 7×24 grid also
+wants the full page width, and a counter that polls every 20 seconds does not belong on a page that
+reads the database five times on load. New route, no risk to what already works.
 
 **Two facts corrected by today's reads.** There is **no duplicate `/jaero_yt` row**: `creators` holds
 exactly two rows, `ava` (8 links, 229 views) and `jaero_yt` (0 links, 3 views), so the long-standing
@@ -167,24 +174,26 @@ along with the brand/domain question parked until Wednesday.
 6. ~~Step 18 campaign tags~~ — **done** 27 Sep (`882ffea9`). Note it does **not** close B12.
 7. ~~B26 unsubscribe; welcome email; B8 keep-alive~~ — **done** 27 Sep (D1–D3).
 8. ~~Delete the duplicate `/jaero_yt` page~~ — **nothing to delete**, disproved 27 Sep.
-9. **Verify on the deploy.** Still the largest gap and it needs his browser: favicon, a country rule,
-   the collection filter and a collection CSV, the subscribers CSV, one page deletion, creator home,
-   compare, the three collection behaviours, an accept-with-claim → approve → blocked disconnect, the
-   Team tab on a model login, the `.nav-current` label, the reworded home page, one `/register`
-   signup (which should leave a `signup_log` row), **a date typed into a link schedule**, and
-   **one tagged `/go` click**.
-10. **Wednesday, needs him:** domain, DNS records, `RESEND_API_KEY`, the Vercel env vars, and the
+9. ~~Step 14 heatmap, Step 17 live counter~~ — **done** 27 Sep (`0c09ec5f`, `1ebde424`).
+10. **Verify on the deploy.** Still the largest gap and it needs his browser: favicon, a country rule,
+    the collection filter and a collection CSV, the subscribers CSV, one page deletion, creator home,
+    compare, the three collection behaviours, an accept-with-claim → approve → blocked disconnect, the
+    Team tab on a model login, the `.nav-current` label, the reworded home page, one `/register`
+    signup (which should leave a `signup_log` row), **a date typed into a link schedule**,
+    **one tagged `/go` click**, and the new **Best time** tab (the grid should shade Ava's real hours,
+    and "online now" should count him while he is on `/ava` in another window).
+11. **Wednesday, needs him:** domain, DNS records, `RESEND_API_KEY`, the Vercel env vars, and the
     brand-name decision. Until then nothing in Part 2c can be proved and Step 24 cannot start.
-11. **A24 visual page builder** — the biggest remaining item; still blocked on the profile-photo
+12. **A24 visual page builder** — the biggest remaining item; still blocked on the profile-photo
     resize and canvas decisions in `DECISIONS.md`.
-12. **A25 / B3 / B4 session + password hardening** — required before ten real model logins exist.
-13. **Buildable without him, in rough order of worth:** double opt-in (`confirmed_at` + a confirm
-    route reusing the D1 token pattern, which would also gate the welcome mail); Step 17 live
-    counter; Step 14 heatmap; Step 23 consent banner; Step 20 A/B on the existing rotation; B4
-    `sessions` table; B5 regenerate `sql/schema.sql`; an `.env.example` note for `RESEND_API_KEY`
-    and `CRON_SECRET`. Step 21 QR is buildable but wants an npm dependency, which is a blind risk
-    while no build result can be read here.
-14. **Finish the other partials:** Step 15 / B12 (needs `utm_*` captured on incoming views plus an
+13. **A25 / B3 / B4 session + password hardening** — required before ten real model logins exist.
+14. **Buildable without him, in rough order of worth:** double opt-in (`confirmed_at` + a confirm
+    route reusing the D1 token pattern, which would also gate the welcome mail — it must ship
+    switched off while no provider key exists, or the list becomes unusable); Step 23 consent banner;
+    Step 20 A/B on the existing rotation; B4 `sessions` table; B5 regenerate `sql/schema.sql`; an
+    `.env.example` note for `RESEND_API_KEY` and `CRON_SECRET`. Step 21 QR is buildable but wants an
+    npm dependency, which is a blind risk while no build result can be read here.
+15. **Finish the other partials:** Step 15 / B12 (needs `utm_*` captured on incoming views plus an
     events table) and A17 editor compaction, which today's four new cards made worse.
-15. Housekeeping: A30 delete the stale branch; Step 8 `domains` table when a domain exists.
-16. Only after LandR is done: `eleven-smg/chatterdesk`.
+16. Housekeeping: A30 delete the stale branch; Step 8 `domains` table when a domain exists.
+17. Only after LandR is done: `eleven-smg/chatterdesk`.
