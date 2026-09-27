@@ -4,7 +4,7 @@ Append one entry per working session, newest first. Always record commit SHAs.
 
 ---
 
-## 2026-09-27 — two failed builds before breakfast, then the mailing groundwork, Step 19 and Step 18
+## 2026-09-27 — two failed builds before breakfast, then the mailing groundwork, Step 19, Step 18, and the Best time tab
 
 Longest session so far. Head was `1ec009c4` once the morning's breakage was repaired. The client's
 standing instruction all day was to keep building and stop asking process questions; everything that
@@ -165,16 +165,51 @@ not mistaken for done.
 | `ce0d75a4` | `STATE.md` + `DECISIONS.md` rewritten to 27 Sep (+126/−57) |
 | `98d7a2aa` | `PROGRESS.md`: Steps 18 and 19 close, new Part 2c for the mailing work, queue rebuilt (+79/−62) |
 | `7f5539ec` | `BUGS.md`: B26 → F33, B8 → F34, B12 explained, duplicate-page claim retracted, two new rules (+24/−10) |
-| this commit | `SESSION-LOG.md` — blocks 8–15 |
+| `5dc83800` | `SESSION-LOG.md` — blocks 8–15 |
 
 Every commit today was verified with `get_commit` for its file list and diff stats, which is the only
 proof available that a whole-file resend changed what it claimed to and nothing else.
 
-**Where it leaves the project.** Pack totals are **14 DONE · 2 PARTIAL · 7 NOT STARTED · 1
-CANCELLED**. Everything shipped today is proof CODE. The largest remaining items are unchanged: A24
-the visual page builder, A25/B3/B4 session and password hardening, and the deploy walk-through that
-only the client's browser can do. Wednesday unblocks the domain, DNS, `RESEND_API_KEY` and the env
-vars, and with them Step 24 and any proof that the mailing work actually sends.
+Pack totals stood at **14 DONE · 2 PARTIAL · 7 NOT STARTED · 1 CANCELLED** at the end of this block
+— superseded two hours later by Block 16.
+
+### Block 16 — Steps 14 and 17: a new "Best time" tab
+
+| SHA | What |
+| --- | --- |
+| `0c09ec5f` (+276, 0 deletions, 3 files) | **new** `app/dashboard/[handle]/heatmap/page.tsx` + `heatmap/Heatmap.tsx`; `Sidebar.tsx` +9 (nav item + clock icon) — **Step 14** |
+| `1ebde424` (+156, 3 files) | **new** `app/api/online/route.ts` + `heatmap/OnlineNow.tsx`; `heatmap/page.tsx` +4 renders it — **Step 17** |
+
+**Both went on their own tab rather than onto the analytics page**, which is the one deviation worth
+recording. The analytics page is a single 24 KB file and every edit to it means a whole-file resend —
+the exact shape of the two builds that failed this morning. A 7×24 grid also wants the full width,
+and a component polling every 20 seconds has no business on a page that already runs five queries on
+load. A new route risks nothing that currently works.
+
+**The heatmap.** The server half is `force-dynamic`, reads only `created_at` from `page_views` and
+`link_clicks` over the last 90 days with a 5,000-row cap per table, and needs no migration. The
+client half draws the grid, toggles between **Page views** and **Link clicks**, names the three
+busiest slots in a sentence, and prints both the timezone and the cap so nobody reads more into the
+colours than is there. **The buckets are computed in the viewer's own browser clock** — "best time to
+post" is a human answer and must be in the reader's hours, not the server's UTC. That forces the
+hydration-safe pattern from Step 19: render empty, fill in a `useEffect`. With 229 views on Ava's
+page the grid will be thin, so the empty and near-empty states say so rather than crowning a best
+hour from a handful of visits.
+
+**The live counter.** `/api/online?handle=` calls `requireDashboardAccess(handle)` before it counts
+anything — a route handler runs no layout, so it gates itself, which is F12's rule and the reason the
+export route was a P0 in the first place. Presence is `created_at + duration_seconds` reaching within
+5 minutes of now, over a 30-minute read window; rows are deduped on `session_id` and then
+`visitor_id`, so one person with two tabs is one person. `Cache-Control: no-store`, because a cached
+"12 online" is worse than no number. On a read error it returns `online: null` and the widget shows
+nothing — a zero would read as a fact. It polls every 20 s and renders nothing at all until the first
+reply, so there is no flash of "0 online".
+
+**Pack totals are now 16 DONE · 2 PARTIAL · 5 NOT STARTED · 1 CANCELLED.** Both new steps are proof
+CODE. What remains buildable without the client: double opt-in, Step 23 consent banner, Step 20 A/B
+on the existing rotation, B3/B4 session and password hardening, B5 regenerating `sql/schema.sql`,
+B12's incoming-UTM capture, and A30. A24 the visual page builder is still the biggest item and still
+waiting on his answers; Wednesday unblocks the domain, DNS, `RESEND_API_KEY` and Step 24.
 
 ---
 
