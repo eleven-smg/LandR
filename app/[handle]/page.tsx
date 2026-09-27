@@ -525,6 +525,7 @@ export default async function CreatorPage({
       note={String(creator.subscribe_note || "")}
       style={normalizeSubscribeStyle(creator.subscribe_style)}
       buttonText={String(creator.subscribe_button_text || "")}
+      buttonNote={String(creator.subscribe_button_note || "")}
       askName={!!creator.subscribe_ask_name}
       avatar={String(creator.photo_url || "")}
     />
