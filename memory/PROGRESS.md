@@ -86,6 +86,7 @@ Walked turn by turn through the 22 Aug and 25 Aug archive. Source = the turn tha
 | A28 | NSFW / 18+ warning | CANCELLED | — | Client dropped it (25 Aug 3:39 AM). Never raise again |
 | A29 | Create ten model pages/accounts for the agency | CANCELLED | — | Client: not our job, the platform only has to *allow* ~10 (25 Aug 4:58 PM) |
 | A30 | Delete the stale `restore/editor-embeds-and-schema` branch | NOT STARTED | NONE | Client agreed 22 Aug 10:01 PM; branch still exists at `549239c7` |
+| A31 | Manager / VA smart-link dashboards: assigned Telegram destination and 11 default links per VA | NOT STARTED | NONE | Latest user request, captured 2026-10-16; specification in memory/VA-SMART-LINKS.md. Screenshot pending. Additive scope, not a replacement roadmap. |
 
 **Reference products the client is benchmarking against:** `tapforallmylinks.com`,
 `lander.launchyoursocials.com/signin`, and the "rachelfit" bio-page style (now the Spotlight template).

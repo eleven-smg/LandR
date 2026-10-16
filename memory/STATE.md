@@ -286,3 +286,7 @@ Held by the client, supplied as `project landr.zip`:
 `LANDER-Guide.md` / `.pdf`, `notion-playbook.md` / `.pdf`, `LANDER-HANDOFF.pdf`,
 `LANDER — Scaling to a SaaS Platform.pdf`, `.env.local.example`, and a `code/` folder with the
 July versions of `EmbedShowcase.tsx` and `edit/actions.ts`.
+
+## 2026-10-16 planning-only continuation
+- Read main at ddcc136e1171886716ca4001b0901bae8081b87d. Earlier state/head facts above are historical, not a fresh infrastructure audit.
+- A31 added to the existing benchmark; memory/VA-SMART-LINKS.md is a feature specification, not a second roadmap. No app code, schema or Vercel configuration changed. Screenshot pending. This memory-only commit may trigger existing Git-connected deployment.

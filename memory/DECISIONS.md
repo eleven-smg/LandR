@@ -58,3 +58,7 @@
 7. Is the saved flagged-country list intentional (Nigeria, Ghana, Kenya … India, Pakistan,
    Bangladesh), or left over from testing?
 8. Is "crop reads 0" still happening? Not reproducing here.
+
+## 2026-10-16 — added VA smart-link scope
+- A31 is approved planning scope, not implemented: a manager assigns VAs Telegram destinations and reusable sets of short/smart links (11 in the reference example). Reference screenshot pending; do not infer which provider the manager used.
+- Latest user explicitly requested ChatterDesk fixes now, superseding the old global instruction to leave it untouched until LandR is finished. This does not mark any LandR item complete.

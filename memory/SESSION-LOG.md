@@ -4,6 +4,13 @@ Append one entry per working session, newest first. Always record commit SHAs.
 
 ---
 
+## 2026-10-16 — VA smart-link dashboard scope only
+
+- Read current AGENTS, README and project memory. Added A31 to PROGRESS and captured memory/VA-SMART-LINKS.md.
+- Requirement: manager-assigned Telegram destinations and 11 default smart links per VA, using shared routing infrastructure rather than assuming one external paid account per VA.
+- Status NOT STARTED / proof NONE. No app/schema changes; screenshot needed to match the reference. No claim that the reference provider has been identified. This entry ships with the planning commit; resolve SHA with git log.
+
+
 ## 2026-09-27 — two failed builds before breakfast, then the mailing groundwork, Step 19, Step 18, the Best time tab, A/B tests and the consent banner
 
 Longest session so far. Head was `1ec009c4` once the morning's breakage was repaired. The client's
