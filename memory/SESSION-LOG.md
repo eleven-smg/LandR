@@ -4,6 +4,12 @@ Append one entry per working session, newest first. Always record commit SHAs.
 
 ---
 
+
+## 2026-10-18 UTC tool clock — A31 screenshot received (documentation only)
+- Reference Screenshot (118).png reviewed: Delphora Resources, 11 VA-specific stable links follow the current Telegram assignment; a separate account-specific section stays tied to one Telegram.
+- Updated VA-SMART-LINKS.md reference and scope; no replacement screenshot needed. Branding does not establish the original software vendor or domain ownership. Shared domains can serve many VA paths; custom domains are not guaranteed free.
+- A31 remains NOT STARTED / implementation proof NONE. No app, schema, current queue or Vercel changes. Planning parent commit 824a064995b972b4ee682203f6e2e1e6713eb768; this entry ships with the reference update (resolve its SHA in GitHub log).
+
 ## 2026-10-16 — VA smart-link dashboard scope only
 
 - Read current AGENTS, README and project memory. Added A31 to PROGRESS and captured memory/VA-SMART-LINKS.md.
